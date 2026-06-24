@@ -1,0 +1,29 @@
+# dpo_multiobj_fullparam.yaml — 头条 treatment：全参 DPO + 多目标奖励
+# 为什么默认: 2×H100 可全参 DPO；多目标奖励是 RQ1 的主方法。
+# 对实验意义: 这是「正向 claim」的主力配置。
+
+output_dir: ./alignment/out/dpo_multiobj
+
+# --- 训练（仿 dots.tts train schema） ---
+learning_rate: 1.0e-5
+max_train_steps: 1500
+warmup_steps: 50
+gradient_accumulation_steps: 4
+micro_batch_size: 1
+grad_clip_norm: 1.0
+weight_decay: 0.01
+log_interval: 10
+save_interval: 500
+num_workers: 2
+
+# --- 偏好对齐（本实验新增） ---
+dpo:
+  base_ckpt: rednote-hilab/dots.tts-base
+  beta: 0.1
+  lambda_sft: 0.1                 # winners 上的 anchor SFT 正则
+  pairs_file: ./pairs/out/pairs_best_worst.jsonl
+  reward_weights: { wer: 0.4, sim: 0.3, utmos: 0.3 }   # 记录用（实际奖励在 reward/ 阶段算）
+  lora: { enabled: false }        # 全参；A6000 档改 dpo_lora.yaml
+
+# --- 分布式（2×H100：DeepSpeed ZeRO-2；用 accelerate launch 时由 accelerate config 提供） ---
+# accelerate config 建议: deepspeed zero_stage=2, bf16, 2 GPU

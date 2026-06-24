@@ -1,0 +1,13 @@
+# meanflow_distill_aligned.yaml — Phase B：把对齐模型蒸馏到少步（扩展 dots.tts MeanFlow 配置）
+# 为什么: teacher 用对齐模型(非 base)，才能在变快的同时保住对齐增益。
+# 注意: 字段名需对照 dots.tts/scripts/train_dots_tts_meanflow.py 的 MeanFlowSettings。
+
+output_dir: ./phaseB/out/distill_aligned
+
+teacher_ckpt: ./alignment/out/dpo_multiobj   # 对齐后模型作 teacher
+student_steps: 2                              # 目标 NFE（1 或 2）
+cfg_distill_mode: fused                       # CFG 融进蒸馏目标（dots.tts 既有）
+learning_rate: 5.0e-6
+max_train_steps: 2000
+gradient_accumulation_steps: 4
+micro_batch_size: 1

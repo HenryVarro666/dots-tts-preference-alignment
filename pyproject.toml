@@ -1,0 +1,35 @@
+# pyproject.toml — 本实验在 dots.tts 之上的「增量依赖」声明
+#
+# 做什么:   只列 dots.tts 本身没有、但偏好对齐 + 评测需要的额外包。
+# 怎么做:   作为 overlay 安装（dots.tts 用 `-e` 装，本表补差量）；见 env/setup_env.sh。
+# 为什么:   不重复 dots.tts 的 torch/transformers/torchdiffeq 等核心依赖，避免版本打架。
+# 对实验意义: 环境可复现；区分「dots.tts 自带」与「本实验新增」便于排障。
+#
+# 注意: 本机(macOS/无 GPU)不安装、不运行；仅作声明。真正安装在 GPU 机器上。
+
+[project]
+name = "dots-tts-preference-alignment"
+version = "0.1.0"
+description = "Open, reward-hacking-resistant preference optimization (DPO/open-SOAR) for dots.tts continuous-latent TTS"
+requires-python = ">=3.10,<3.13"   # 对齐 dots.tts 的 Python 区间
+license = { text = "Apache-2.0" }
+
+# 增量依赖（dots.tts 已含 torch>=2.8 / torchaudio / transformers>=4.57 / torchdiffeq /
+# accelerate>=1.12 / librosa / soundfile / einops / safetensors / loguru，本表不再重复）
+dependencies = [
+    "speechmos>=1.0.0",   # UTMOS 自然度代理（reward 的第三目标 + 评测）
+    "jiwer>=3.0.0",       # WER 计算（seed-tts-eval 亦用）
+    "peft>=0.13.0",       # LoRA（A6000 档默认；ref = disable_adapter()）
+    "deepspeed>=0.15.0",  # ZeRO-2/3（full-param DPO 在 2 卡上的显存分片）
+    "pyyaml>=6.0",        # 配置解析（dots.tts 也用）
+    "numpy>=1.24",
+]
+
+# seed-tts-eval 的 funasr/zhconv/modelscope 由 env/setup_env.sh 单独从其 requirements.txt 装。
+# EmergentTTS-Eval 需另行 clone（arXiv 2505.23009 / boson-ai/EmergentTTS-Eval-public）。
+
+[tool.dots_pa]
+# 本实验默认超参（脚本读取的兜底值；configs/*.yaml 可覆盖）
+default_reward_weights = { wer = 0.4, sim = 0.3, utmos = 0.3 }
+default_K = 6
+default_beta = 0.1

@@ -1,0 +1,23 @@
+# open_soar_selfcorrect.yaml — reward-free 自校正（SOAR 开源再现）
+# 为什么: 隔离「自校正」单独贡献，与「外部多目标偏好(DPO)」对照(RQ4)。
+# 对实验意义: base 与 dpo_multiobj 之间的关键中间臂。无需外部奖励/偏好对。
+
+output_dir: ./alignment/out/open_soar
+
+learning_rate: 1.0e-5
+max_train_steps: 1500
+warmup_steps: 50
+gradient_accumulation_steps: 4
+micro_batch_size: 1
+grad_clip_norm: 1.0
+log_interval: 10
+save_interval: 500
+
+# 直接用训练音频清单（偏轨样本在训练内构造，无需 pairs）
+train_manifest: ./data/prompts/ljspeech_train.jsonl
+
+dpo:
+  base_ckpt: rednote-hilab/dots.tts-base
+  beta: 0.1
+  soar_noise_scale: 0.5           # 构造 off-trajectory(偏轨)的扰动强度
+  lora: { enabled: false }
