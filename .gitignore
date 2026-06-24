@@ -1,0 +1,31 @@
+# --- 环境 / 依赖（不入库；setup_env.sh 会重建/克隆） ---
+.venv/
+.deps/                # 克隆的 dots.tts / seed-tts-eval（代码 only，体积大，setup 重克隆）
+.third_party/         # EmergentTTS-Eval 等
+.ckpt/                # WavLM-SV 等下载的权重
+__pycache__/
+*.pyc
+*.pyo
+
+# --- 数据 / 生成产物（体积大、可重生成，不入库） ---
+data/corpora/         # 下载的公开语料
+data/prompts/*.jsonl  # 生成的 prompt 清单
+candidates/out/
+reward/out/
+pairs/out/
+inference/out/
+inference/out_streaming/
+alignment/out/        # 对齐 checkpoint（大）
+phaseB/out/
+results/out/
+eval/eval_sets/*.lst
+eval/.cal_*_nosudo.sh # run_seedtts_eval.sh 现场生成的去 sudo 临时脚本
+ablation/ledger.jsonl
+
+# --- 运行日志的「填写副本」（保留模板，忽略副本） ---
+docs/RUN_JOURNAL.md
+
+# --- 杂项 ---
+.DS_Store
+*.wav
+*.log

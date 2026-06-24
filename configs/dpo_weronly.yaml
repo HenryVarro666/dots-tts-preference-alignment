@@ -1,0 +1,23 @@
+# dpo_weronly.yaml — reward-hacking 对照臂：DPO + 仅 WER 奖励
+# 为什么存在: 故意只奖励 WER，复现「读得清但不像人/没表现力」的 reward hacking(RQ3)。
+# 对实验意义: 这是项目最有冲击力的负面结果来源。偏好对来自 reward/ 的 weronly 排序。
+
+output_dir: ./alignment/out/dpo_weronly
+
+learning_rate: 1.0e-5
+max_train_steps: 1500
+warmup_steps: 50
+gradient_accumulation_steps: 4
+micro_batch_size: 1
+grad_clip_norm: 1.0
+log_interval: 10
+save_interval: 500
+
+dpo:
+  base_ckpt: rednote-hilab/dots.tts-base
+  beta: 0.1
+  lambda_sft: 0.1
+  # 用「仅 WER」聚合的偏好对（reward/aggregate_reward.py --w-wer 1 --w-sim 0 --w-utmos 0 后再 build_preference_pairs）
+  pairs_file: ./pairs/out/pairs_best_worst_weronly.jsonl
+  reward_weights: { wer: 1.0, sim: 0.0, utmos: 0.0 }
+  lora: { enabled: false }

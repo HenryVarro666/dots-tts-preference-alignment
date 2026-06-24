@@ -1,0 +1,24 @@
+# streaming_aware.yaml — STRETCH：流式感知对齐（前缀/边界敏感奖励）
+# 为什么: 整句奖励看不见「首块差/边界跳变」等流式特有坏味道；流式专用奖励可能更利于流式。
+# 对实验意义: 回答「为流式对齐 vs 整句对齐，哪个更利于流式」——SOAR 的价值在低 look-ahead 下最大。
+# 注意: stretch 目标，A 主体跑通后再做。
+
+output_dir: ./alignment/out/dpo_streaming_aware
+
+learning_rate: 1.0e-5
+max_train_steps: 1500
+warmup_steps: 50
+gradient_accumulation_steps: 4
+micro_batch_size: 1
+log_interval: 10
+save_interval: 500
+
+dpo:
+  base_ckpt: rednote-hilab/dots.tts-base
+  beta: 0.1
+  lambda_sft: 0.1
+  pairs_file: ./pairs/out/pairs_best_worst.jsonl
+  # 流式感知奖励：在多目标基础上加权前缀/边界项（需在 reward 阶段额外打分）
+  reward_weights: { wer: 0.3, sim: 0.25, utmos: 0.25, prefix: 0.1, boundary: 0.1 }
+  streaming_aware: true
+  lora: { enabled: false }

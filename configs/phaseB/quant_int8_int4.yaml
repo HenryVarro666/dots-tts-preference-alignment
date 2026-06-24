@@ -1,0 +1,15 @@
+# quant_int8_int4.yaml — Phase B：量化配方（瞄准 8GB Turing）
+# 为什么: 对接 ../../04 —— 8GB 跑不动 2B 全精度；无 FlashRT(SM7.5)。
+# 注意: 仅脚手架；后端(bitsandbytes/torchao)细节随实现补。
+
+input_ckpt: ./phaseB/out/distill_aligned     # 蒸馏后的少步模型
+output_dir: ./phaseB/out/quantized
+
+backbone:                                     # Qwen2.5-1.5B
+  mode: int4                                  # NF4
+  backend: bitsandbytes
+dit_head:                                     # 精度敏感，先保守
+  mode: int8
+  backend: torchao
+target_peak_vram_gb: 8
+notes: "无 FlashRT(Turing)；配合 NFE 1~2 才能在 RTX2070 达可用 RTF"

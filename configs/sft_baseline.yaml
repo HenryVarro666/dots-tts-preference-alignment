@@ -1,0 +1,23 @@
+# sft_baseline.yaml — 控制变量臂：仅用 winners 继续 SFT（CE+FM+EOS）
+# 为什么: 排除「DPO 的增益其实只是多看了好数据」这一替代解释。
+# 对实验意义: 若 dpo_multiobj 显著优于 sft，才说明是「偏好对齐」而非「数据增量」在起作用。
+
+output_dir: ./alignment/out/sft
+
+learning_rate: 1.0e-5
+max_train_steps: 1500
+warmup_steps: 50
+gradient_accumulation_steps: 4
+micro_batch_size: 1
+grad_clip_norm: 1.0
+log_interval: 10
+save_interval: 500
+
+# 用 winners 当普通训练数据（从 pairs 抽 win 一侧，或直接用高奖励候选）
+train_manifest: ./pairs/out/winners_only.jsonl
+
+# 标记为纯 SFT（train_dots_tts_dpo 检测到 sft 模式则走 dots.tts 标准 CE+FM+EOS）
+mode: sft
+dpo:
+  base_ckpt: rednote-hilab/dots.tts-base
+  lora: { enabled: false }
