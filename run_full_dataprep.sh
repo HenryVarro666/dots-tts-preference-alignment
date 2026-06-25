@@ -18,6 +18,15 @@
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
 
+# 自动激活 venv：防止在新终端/tmux 里忘了 source 而误用 anaconda base（那里没装我们的依赖）。
+if [[ -f ".venv/bin/activate" ]]; then
+  # shellcheck disable=SC1091
+  source ".venv/bin/activate"
+  echo "[env] venv 已激活: $(command -v python)"
+else
+  echo "[env] ⚠️ 未找到 .venv —— 使用当前环境 $(command -v python)（请确认这是对的环境）"
+fi
+
 PROMPTS="${1:-data/prompts/dots_manifest_train.jsonl}"
 K="${2:-6}"
 WER_BATCH="${3:-16}"
