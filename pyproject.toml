@@ -12,7 +12,7 @@ name = "dots-tts-preference-alignment"
 version = "0.1.0"
 description = "Open, reward-hacking-resistant preference optimization (DPO/open-SOAR) for dots.tts continuous-latent TTS"
 requires-python = ">=3.10,<3.13"   # 对齐 dots.tts 的 Python 区间
-license = { text = "Apache-2.0" }
+license = "Apache-2.0"             # SPDX 字符串（新 setuptools 要求；旧 table 形式已弃用）
 
 # 增量依赖（dots.tts 已含 torch>=2.8 / torchaudio / transformers>=4.57 / torchdiffeq /
 # accelerate>=1.12 / librosa / soundfile / einops / safetensors / loguru，本表不再重复）
@@ -27,6 +27,14 @@ dependencies = [
 
 # seed-tts-eval 的 funasr/zhconv/modelscope 由 env/setup_env.sh 单独从其 requirements.txt 装。
 # EmergentTTS-Eval 需另行 clone（arXiv 2505.23009 / boson-ai/EmergentTTS-Eval-public）。
+
+# 本项目不是「可导入的 Python 包」——脚本用 sys.path.insert + `from common import ...`，
+# 不靠安装。`pip install -e .` 只为把上面的增量依赖装进 venv。
+# 显式声明「无模块、无包」以关闭 setuptools 的扁平布局自动发现（否则会把 eval/ data/ 等顶层目录
+# 误当多个包而报错: "Multiple top-level packages discovered in a flat-layout"）。
+[tool.setuptools]
+packages = []
+py-modules = []
 
 [tool.dots_pa]
 # 本实验默认超参（脚本读取的兜底值；configs/*.yaml 可覆盖）
