@@ -2,22 +2,20 @@
 train_open_soar.py — 核心③：open-SOAR（reward-free 自校正）开源再现
 
 做什么:
-    不依赖任何外部奖励(WER/SIM/UTMOS)，靠模型自身构造「on-trajectory(回到干净 x1) vs
-    off-trajectory(扰动 rollout)」偏好对，用同一 dpo_fm_loss 管线做自校正对齐。
-怎么做:
-    对每条训练音频，winner = 标准 FM 目标(干净 u_t)；loser = 从扰动/高噪 x_t 起步的
-    rollout 速度场。让策略偏向「能从偏轨恢复到干净轨迹」的预测 —— 即自校正。
+    不依赖任何外部奖励(WER/SIM/UTMOS)，用「干净 vs 扰动」对比做自校正对齐：
+    winner = 干净音频；loser = 同一音频加噪后的版本。DPO 让策略相对 ref 更偏好「干净重建」。
+怎么做（复用主 DPO 的高层前向路径，可直接跑）:
+    复用 DpoTrainer 的 `_fm_per_sample`(共享 RNG) + `dpo_loss`。loser 的 off-trajectory 由
+    **在波形上加高斯噪声**得到（扰动会传到 vocoder.extract_latents → FM 目标），
+    无需改 dots.tts 内部。
 为什么这么设计:
-    dots.tts 的 SOAR 训练程序未开源（仓库只有 soar 权重，核心代码分析.md 证实 reward-free、
-    只作用于 flow-matching 头）。本文件是**我们的开源再现**，用于隔离「自校正」单独的贡献，
-    与「外部多目标偏好(DPO)」对照 —— 回答 RQ4。
+    dots.tts 的原始 SOAR 训练程序未开源（仓库只有 soar 权重，核心代码分析.md 证实 reward-free、
+    只作用于 flow-matching 头）。本文件是**我们的开源近似**：用「偏好干净>偏好扰动」逼近
+    「自我纠正到干净轨迹」。用于隔离「自校正」单独效果，与多目标 DPO 对照（RQ4）。
 对实验意义:
-    open_soar 是 base 与 dpo_multiobj 之间的关键中间臂；若它已拿到大部分鲁棒性增益，
-    说明「自校正」比「外部奖励」更本质（这正是文档 05 §3.13/§6.2 想厘清的）。
+    open_soar 是 base 与 dpo_multiobj 之间的关键中间臂。
 
-前置条件: 环境就绪、dots.tts-base、训练音频清单(可直接用 data/prompts/*_train.jsonl)。
-预期结果: output_dir 写出 open-SOAR 对齐 checkpoint。
-⚠️ 本机只语法检查；此为我们的再现，非原 SOAR（见 docs/01-METHOD.md 标注）。
+⚠️ 明确标注：这是 SOAR 的**近似再现**（波形扰动版），非 Boson 原始算法；本机只语法检查。
 """
 
 from __future__ import annotations
@@ -31,46 +29,53 @@ from common import ensure_dots_tts_importable  # noqa: E402
 
 import torch  # noqa: E402
 
-from train_dots_tts_dpo import DpoTrainer  # noqa: E402
-from losses_dpo import dpo_fm_loss  # noqa: E402
+from train_dots_tts_dpo import DpoTrainer, _to_device  # noqa: E402
+from losses_dpo import dpo_loss, anchor_sft_loss  # noqa: E402
 
 
 class OpenSoarTrainer(DpoTrainer):
-    """复用 DpoTrainer 的编排，但偏好对来自「干净 vs 扰动 rollout」而非外部奖励。"""
+    """复用 DpoTrainer 编排；偏好对 = (干净, 加噪)，无外部奖励。"""
 
-    def _make_off_trajectory(self, sample, noise_scale: float):
-        """从更高噪声起点构造一个「偏轨」样本：把 FM 起点 x_t 的噪声放大。
+    def _perturb_waveform(self, batch: dict) -> dict:
+        """对 collate 后 batch 的 'sample' 波形加高斯噪声，构造 off-trajectory(扰动) 样本。
 
-        实现要点: 复用 dots.tts core 的 flow-matching helper 采样 x0/t，但对 loser
-        注入额外噪声(noise_scale)，使其偏离干净轨迹；target 仍是干净 u_t，
-        从而训练「无论起点多偏都要指回干净目标」= 自校正。
+        扰动会经 vocoder.extract_latents 传到 FM 目标，使模型学「偏好干净>偏好扰动」。
         """
-        off = dict(sample)
-        off["_extra_noise_scale"] = noise_scale  # core 前向读取以扰动起点（实现见 METHOD.md）
-        return off
+        out = dict(batch)
+        s = batch["sample"]
+        scale = float(self.dpo.get("soar_noise_scale", 0.5))
+        out["sample"] = s + torch.randn_like(s) * (scale * s.std().clamp_min(1e-6))
+        return out
 
     def train_step(self, batch) -> dict:
-        clean = batch["sample"]
-        off = self._make_off_trajectory(clean, self.dpo.get("soar_noise_scale", 0.5))
-        rng = torch.random.get_rng_state()
+        clean_raw = batch["sample"]
+        pert_raw = self._perturb_waveform(clean_raw)
+        clean = _to_device(self.policy.prepare_training_batch(clean_raw), self.accel.device)
+        pert = _to_device(self.policy.prepare_training_batch(pert_raw), self.accel.device)
 
-        p_pred_w, tgt_w, m_w = self._forward_fm(self.policy, clean, rng)
-        r_pred_w, _, _ = self._ref_forward(clean, rng)
-        p_pred_l, tgt_l, m_l = self._forward_fm(self.policy, off, rng)  # 注意 target 仍是干净 u_t
-        r_pred_l, _, _ = self._ref_forward(off, rng)
+        rng_c = self._capture_rng()
+        rng_p = self._capture_rng()
+        fm_c_pol, ce_w, eos_w = self._fm_per_sample(self.policy, clean, rng_c, grad=True, want_sft=True)
+        fm_c_ref = self._ref_forward(clean, rng_c)
+        fm_p_pol = self._fm_per_sample(self.policy, pert, rng_p, grad=True)
+        fm_p_ref = self._ref_forward(pert, rng_p)
 
-        stats = dpo_fm_loss(p_pred_w, tgt_w, m_w, r_pred_w,
-                            p_pred_l, tgt_l, m_l, r_pred_l, beta=self.beta)
-        self.accel.backward(stats.loss)
+        # winner=干净, loser=扰动
+        stats = dpo_loss(fm_c_pol, fm_c_ref, fm_p_pol, fm_p_ref, beta=self.beta)
+        loss = stats.loss
+        if self.lam_sft > 0:
+            loss = loss + anchor_sft_loss(ce_term=ce_w, eos_term=eos_w, lam=self.lam_sft)
+
+        self.accel.backward(loss)
         if self.accel.sync_gradients:
             self.accel.clip_grad_norm_(self.policy.parameters(), self.cfg.get("grad_clip_norm", 1.0))
             self.opt.step()
             self.opt.zero_grad(set_to_none=True)
-        return {"loss": float(stats.loss.item()), "reward_acc": stats.reward_accuracy}
+        return {"loss": float(loss.item()), "reward_acc": stats.reward_accuracy}
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser(description="open-SOAR reward-free 自校正")
+    ap = argparse.ArgumentParser(description="open-SOAR reward-free 自校正（近似）")
     ap.add_argument("--config", required=True, help="configs/open_soar_selfcorrect.yaml")
     args = ap.parse_args()
     import yaml  # type: ignore
@@ -80,8 +85,8 @@ def main() -> None:
     from data_pairs import build_single_dataloader  # type: ignore
 
     trainer = OpenSoarTrainer(cfg)
-    loader = build_single_dataloader(cfg, trainer.accel)  # 单样本(非配对)，偏轨在训练内构造
-    loader, = trainer.accel.prepare(loader)
+    loader = build_single_dataloader(cfg, trainer)
+    trainer.policy, trainer.opt, loader = trainer.accel.prepare(trainer.policy, trainer.opt, loader)
 
     step = 0
     for batch in loader:
@@ -94,7 +99,7 @@ def main() -> None:
             break
     trainer.save(cfg["output_dir"], step)
     if trainer.accel.is_main_process:
-        print(f"✓ open-SOAR 完成，{step} 步 -> {cfg['output_dir']}")
+        print(f"✓ open-SOAR(近似) 完成，{step} 步 -> {cfg['output_dir']}")
 
 
 if __name__ == "__main__":
