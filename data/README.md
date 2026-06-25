@@ -15,10 +15,17 @@
 
 **怎么用**：
 ```bash
+# 推荐：LJSpeech 用 dots.tts 下载器一步产出 manifest，再直接读它（最稳，audio 为绝对路径）
+python ../.deps/dots.tts/scripts/prepare_train_jsonl_manifest.py --output-dir corpora/ljspeech48k --valid-size 0
+python prepare_prompts.py --corpus dots_manifest --source corpora/ljspeech48k/ljspeech_48khz_manifest_train.jsonl --lang en --limit 200
+
+# VCTK / AISHELL-3 用各自原生目录
 bash fetch_public_corpora.sh
-python prepare_prompts.py --corpus ljspeech --root corpora/ljspeech48k --limit 200   # 先小跑打通
-python prepare_prompts.py --corpus vctk     --root corpora/vctk
-python prepare_prompts.py --corpus aishell3 --root corpora/aishell3
+python prepare_prompts.py --corpus vctk     --source corpora/vctk
+python prepare_prompts.py --corpus aishell3 --source corpora/aishell3
 ```
+
+> `--corpus dots_manifest` 直接读 `{fid,audio,text}` 清单；也可喂任何 dots.tts 风格 manifest。
+> `--root`/`--manifest` 是 `--source` 的别名（向后兼容）。
 
 许可/采样率见 [`LICENSES.md`](LICENSES.md)（标〔需核实〕项跑前确认）。
