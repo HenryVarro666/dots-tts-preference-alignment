@@ -49,13 +49,16 @@ def _run(cmd: list[str], dry: bool) -> None:
 def main() -> None:
     ap = argparse.ArgumentParser(description="实验矩阵编排")
     ap.add_argument("--manifest", required=True, help="评测清单 jsonl")
-    ap.add_argument("--lang", default="zh")
+    ap.add_argument("--lang", default="en")
+    ap.add_argument("--sim-backend", choices=["ecapa", "wavlm"], default="ecapa")
     ap.add_argument("--nfe", type=int, nargs="+", default=[10], help="部署 NFE（迁移消融可给多个）")
+    ap.add_argument("--treatments", nargs="*", default=None, help="只跑这些 treatment（默认全部）")
     ap.add_argument("--dry-run", action="store_true", help="只打印命令、写账本，不真正执行")
     args = ap.parse_args()
+    treatments = {k: v for k, v in TREATMENTS.items() if not args.treatments or k in args.treatments}
 
     ledger = []
-    for treat, ckpt in TREATMENTS.items():
+    for treat, ckpt in treatments.items():
         for nfe in args.nfe:
             tag = f"{treat}_nfe{nfe}"
             off_dir = PROJ / "inference" / "out" / tag
@@ -67,14 +70,15 @@ def main() -> None:
             _run(["python", str(PROJ / "inference" / "batch_synthesize_streaming.py"),
                   "--ckpt", ckpt, "--manifest", args.manifest, "--treatment", tag,
                   "--num-steps", str(nfe)], args.dry_run)
-            # 2) 评测（WER/SIM via seed-tts-eval；UTMOS；流式指标；EmergentTTS 单独跑）
-            meta = PROJ / "eval" / "eval_sets" / f"{tag}.meta.lst"
-            _run(["python", str(PROJ / "eval" / "make_seedtts_manifest.py"),
-                  "--manifest", args.manifest, "--out", str(meta)], args.dry_run)
-            _run(["bash", str(PROJ / "eval" / "run_seedtts_eval.sh"), str(meta), str(off_dir),
-                  args.lang, str(PROJ / ".ckpt" / "wavlm_large_finetune.pth")], args.dry_run)
-            _run(["python", str(PROJ / "eval" / "run_utmos.py"),
-                  "--synth-dir", str(off_dir), "--treatment", tag], args.dry_run)
+            # 2) 评测：统一 score_synth(WER/SIM/UTMOS，复用 reward 后端)——离线 + 流式
+            #    （不用 seed-tts-eval shell：那套带 s3prl/select.py 依赖坑，见 docs/05 B-4/B-5）
+            _run(["python", str(PROJ / "eval" / "score_synth.py"),
+                  "--synth-dir", str(off_dir), "--manifest", args.manifest,
+                  "--treatment", tag, "--sim-backend", args.sim_backend], args.dry_run)
+            _run(["python", str(PROJ / "eval" / "score_synth.py"),
+                  "--synth-dir", str(st_dir), "--manifest", args.manifest,
+                  "--treatment", f"{tag}_stream", "--sim-backend", args.sim_backend], args.dry_run)
+            # 流式专属：首包延迟 / RTF / 边界不连续度
             _run(["python", str(PROJ / "eval" / "streaming_metrics.py"),
                   "--streaming-dir", str(st_dir), "--treatment", tag], args.dry_run)
             ledger.append({"treatment": treat, "tag": tag, "ckpt": ckpt, "nfe": nfe,
