@@ -34,6 +34,27 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from common import ensure_dots_tts_importable  # noqa: E402
 
 
+def resolve_ckpt(ckpt: str) -> str:
+    """把 ckpt（本地目录 或 HF repo id）解析成本地权重目录。
+
+    为什么需要:
+        `DotsTtsModel.from_pretrained()` **只认本地目录**，不会自己去 HF 下载；
+        而我们常传 repo id（如 rednote-hilab/dots.tts-base）。复用 dots.tts runtime 自带的
+        `_resolve_pretrained_path`（本地存在直接用，否则 snapshot_download）做解析，
+        与 DotsTtsRuntime 的加载路径完全一致。
+    """
+    ensure_dots_tts_importable()
+    from dots_tts.runtime import DotsTtsRuntime  # type: ignore
+    return str(DotsTtsRuntime._resolve_pretrained_path(ckpt))
+
+
+def load_dots_model(ckpt: str):
+    """解析 ckpt → 本地路径 → DotsTtsModel.from_pretrained。训练侧统一入口。"""
+    ensure_dots_tts_importable()
+    from dots_tts.models.dots_tts.model import DotsTtsModel  # type: ignore
+    return DotsTtsModel.from_pretrained(resolve_ckpt(ckpt))
+
+
 class DotsPreprocessor:
     """持有 model + 可独立 pickle 的 pipeline/collator（供 DataLoader worker 用）。"""
 
@@ -56,9 +77,8 @@ class DotsPreprocessor:
 
     @classmethod
     def from_pretrained(cls, ckpt: str) -> "DotsPreprocessor":
-        ensure_dots_tts_importable()
-        from dots_tts.models.dots_tts.model import DotsTtsModel  # type: ignore
-        model = DotsTtsModel.from_pretrained(ckpt).eval()
+        # 解析 repo id → 本地路径（DotsTtsModel.from_pretrained 只认本地目录）
+        model = load_dots_model(ckpt).eval()
         return cls(model)
 
     # --- 单样本 / 成批（这两个只用 pipeline/collator，可在 worker 进程里跑）---
