@@ -5,7 +5,7 @@
 output_dir: ./alignment/out/dpo_weronly
 
 learning_rate: 1.0e-5
-max_train_steps: 1500
+max_train_steps: 600    # 防过拟合：1500(8ep)→600(~3ep)
 warmup_steps: 50
 gradient_accumulation_steps: 4
 micro_batch_size: 1
@@ -17,8 +17,8 @@ save_interval: 100000  # 只在末尾存一次（save_pretrained 每次写整模
 
 dpo:
   base_ckpt: rednote-hilab/dots.tts-base
-  beta: 0.1
-  lambda_sft: 0.1
+  beta: 0.2                       # 0.1→0.2 收紧漂移
+  lambda_sft: 0.5             # 0.1→0.5 强化 FM 声学 anchor（防全局漂移）
   # 用「仅 WER」聚合的偏好对（run_full_dataprep.sh 会产出这个文件）
   pairs_file: ./pairs/out/pairs_weronly.jsonl
   reward_weights: { wer: 1.0, sim: 0.0, utmos: 0.0 }

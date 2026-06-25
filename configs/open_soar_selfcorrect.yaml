@@ -5,7 +5,7 @@
 output_dir: ./alignment/out/open_soar
 
 learning_rate: 1.0e-5
-max_train_steps: 1500
+max_train_steps: 600    # 防过拟合
 warmup_steps: 50
 gradient_accumulation_steps: 4
 micro_batch_size: 1
@@ -19,7 +19,7 @@ train_manifest: ./data/prompts/dots_manifest_train.jsonl
 
 dpo:
   base_ckpt: rednote-hilab/dots.tts-base
-  beta: 0.1
-  lambda_sft: 0.0                 # 纯 reward-free 自校正：显式关掉 SFT anchor（否则默认 0.1 会偷偷加监督正则，污染 RQ4 对照）
+  beta: 0.2
+  lambda_sft: 0.5             # FM 声学 anchor 防漂移（SFT 正则，非外部奖励，仍 reward-free）
   soar_noise_scale: 0.5           # 构造 off-trajectory(偏轨)的扰动强度
   lora: { enabled: false }

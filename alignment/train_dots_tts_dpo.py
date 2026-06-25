@@ -171,7 +171,11 @@ class DpoTrainer:
         loss = stats.loss
         sft_val = 0.0
         if self.lam_sft > 0:
-            sft = anchor_sft_loss(ce_term=ce_w, eos_term=eos_w, lam=self.lam_sft)
+            # anchor = winner 的 **FM 声学损失**(主项，防 DPO 全局漂移把声学搞崩——
+            # 只锚 ce/eos 没用，TTS 下二者≈0) + ce/eos(顺带)。
+            fm_anchor = fm_pol_w.mean()
+            ce_eos = anchor_sft_loss(ce_term=ce_w, eos_term=eos_w, lam=1.0)
+            sft = self.lam_sft * (fm_anchor + ce_eos)
             loss = loss + sft
             sft_val = float(sft.item())
 
