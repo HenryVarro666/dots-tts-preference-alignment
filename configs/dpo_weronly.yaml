@@ -17,7 +17,7 @@ dpo:
   base_ckpt: rednote-hilab/dots.tts-base
   beta: 0.1
   lambda_sft: 0.1
-  # 用「仅 WER」聚合的偏好对（reward/aggregate_reward.py --w-wer 1 --w-sim 0 --w-utmos 0 后再 build_preference_pairs）
-  pairs_file: ./pairs/out/pairs_best_worst_weronly.jsonl
+  # 用「仅 WER」聚合的偏好对（run_full_dataprep.sh 会产出这个文件）
+  pairs_file: ./pairs/out/pairs_weronly.jsonl
   reward_weights: { wer: 1.0, sim: 0.0, utmos: 0.0 }
   lora: { enabled: false }

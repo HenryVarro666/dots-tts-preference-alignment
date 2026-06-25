@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import json
 import sys
 from pathlib import Path
 
@@ -71,6 +72,38 @@ class DpoTrainer:
         )
         self.beta = float(self.dpo.get("beta", 0.1))
         self.lam_sft = float(self.dpo.get("lambda_sft", 0.1))
+        self._init_logging()
+
+    # --- 训练曲线日志：TensorBoard（实时）+ metrics.jsonl（离线兜底）------- #
+    def _init_logging(self):
+        self.writer = None
+        out = Path(self.cfg["output_dir"])
+        self._metrics_path = out / "metrics.jsonl"
+        if not self.accel.is_main_process:
+            return
+        out.mkdir(parents=True, exist_ok=True)
+        self._metrics_path.write_text("", encoding="utf-8")  # 每次训练清空重写
+        try:
+            from torch.utils.tensorboard import SummaryWriter  # type: ignore
+            self.writer = SummaryWriter(str(out / "tb"))
+        except Exception as e:  # tensorboard 缺失也不影响训练，仅退化为 jsonl
+            print(f"(TensorBoard 不可用，仅写 metrics.jsonl: {e})")
+
+    def log_step(self, step: int, logs: dict):
+        if not self.accel.is_main_process:
+            return
+        if self.writer is not None:
+            for k, v in logs.items():
+                try:
+                    self.writer.add_scalar(f"train/{k}", float(v), step)
+                except (TypeError, ValueError):
+                    pass
+        with self._metrics_path.open("a", encoding="utf-8") as f:
+            f.write(json.dumps({"step": step, **logs}, ensure_ascii=False) + "\n")
+
+    def close_logging(self):
+        if self.writer is not None:
+            self.writer.close()
 
     # --- 关键：在「共享 RNG 状态」下跑一次前向，取 per-sample L_FM ---------- #
     def _capture_rng(self):
@@ -181,6 +214,7 @@ def main() -> None:
         for batch in loader:
             with trainer.accel.accumulate(trainer.policy):
                 logs = trainer.train_step(batch)
+            trainer.log_step(step, logs)  # 每步写 TB + metrics.jsonl（平滑曲线）
             if trainer.accel.is_main_process and step % cfg.get("log_interval", 10) == 0:
                 print(f"step {step}: {logs}")
             step += 1
@@ -190,8 +224,10 @@ def main() -> None:
                 done = True
                 break
     trainer.save(cfg["output_dir"], step)
+    trainer.close_logging()
     if trainer.accel.is_main_process:
         print(f"✓ DPO 完成，{step} 步 -> {cfg['output_dir']}")
+        print(f"  曲线: tensorboard --logdir {cfg['output_dir']}/tb   或   python alignment/plot_metrics.py --run {cfg['output_dir']}")
 
 
 if __name__ == "__main__":

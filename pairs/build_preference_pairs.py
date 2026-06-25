@@ -55,6 +55,7 @@ def main() -> None:
     ap.add_argument("--rewards", default=str(PATHS.rewards_dir / "rewards.jsonl"))
     ap.add_argument("--strategy", choices=["best_worst", "top2_bottom2", "threshold"], default="best_worst")
     ap.add_argument("--tau", type=float, default=0.5, help="threshold 策略的最小奖励差")
+    ap.add_argument("--out", default=None, help="输出路径（默认 pairs/out/pairs_{strategy}.jsonl）；reward-hacking 臂用它指定独立文件")
     args = ap.parse_args()
 
     by_fid = _load(Path(args.rewards))
@@ -75,7 +76,7 @@ def main() -> None:
                 if a["reward"] - b["reward"] > args.tau:
                     pairs.append(_mk(a, b, args.strategy))
 
-    out = PATHS.pairs_dir / f"pairs_{args.strategy}.jsonl"
+    out = Path(args.out) if args.out else PATHS.pairs_dir / f"pairs_{args.strategy}.jsonl"
     n = write_jsonl(out, pairs)
     print(f"✓ {args.strategy}: {n} 对 -> {out}  (来自 {len(by_fid)} 个 prompt)")
 
