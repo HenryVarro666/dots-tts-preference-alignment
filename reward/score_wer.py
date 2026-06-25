@@ -23,11 +23,32 @@ from common import PATHS, read_jsonl, write_jsonl  # noqa: E402
 
 
 class _ASR:
-    """惰性加载的双语 ASR 包装：EN→Whisper，ZH→Paraformer。"""
+    """惰性加载的双语 ASR 包装：EN→Whisper(transformers pipeline)，ZH→Paraformer(funasr)。
 
-    def __init__(self) -> None:
+    为什么用 transformers 的 Whisper 而非 openai-whisper:
+        transformers 是 dots.tts 的硬依赖（一定已装），用它的 ASR pipeline 加载
+        openai/whisper-large-v3，避免再装 openai-whisper 带来的 torch 版本冲突。
+        与 seed-tts-eval 同款 large-v3 后端 → 结果可比。
+    """
+
+    def __init__(self, whisper_model: str = "openai/whisper-large-v3") -> None:
         self._whisper = None
         self._paraformer = None
+        self._whisper_model = whisper_model
+
+    def _ensure_whisper(self):
+        if self._whisper is not None:
+            return
+        import torch  # type: ignore
+        from transformers import pipeline  # type: ignore
+        use_cuda = torch.cuda.is_available()
+        self._whisper = pipeline(
+            "automatic-speech-recognition",
+            model=self._whisper_model,
+            device=0 if use_cuda else -1,
+            torch_dtype=torch.float16 if use_cuda else torch.float32,
+            chunk_length_s=30,  # TTS 样本一般 <30s，但开 chunk 更稳
+        )
 
     def transcribe(self, audio: str, lang: str) -> str:
         if lang == "zh":
@@ -36,11 +57,10 @@ class _ASR:
                 self._paraformer = AutoModel(model="paraformer-zh")
             res = self._paraformer.generate(input=audio)
             return res[0]["text"] if res else ""
-        # 默认 EN
-        if self._whisper is None:
-            import whisper  # type: ignore
-            self._whisper = whisper.load_model("large-v3")
-        return self._whisper.transcribe(audio)["text"]
+        # 默认 EN：transformers Whisper pipeline
+        self._ensure_whisper()
+        out = self._whisper(audio, generate_kwargs={"language": "en", "task": "transcribe"})
+        return out["text"] if isinstance(out, dict) else str(out)
 
 
 def _normalize(text: str, lang: str) -> str:
