@@ -12,10 +12,11 @@
 - **缓解**：`train_dots_tts_dpo._forward_fm` 用 `fork_rng` + 固定 RNG state；写单测验证「同输入同 RNG → 同 L_FM」。
 - **触发信号**：reward_margin 不随训练上升、loss 抖动、对齐无效果。
 
-## 风险③ `dots_preprocess.py` 的 TODO 未对齐 dots.tts 真实张量
-- **为什么要紧**：`fm_patch_mask`/`target` 若构造错，DPO 损失就是错的。
-- **缓解**：对照 `model.py:_compute_fm_loss_term`(:1080)、`prepare_training_batch`(:1184) 补全；先用 base 模型在一条样本上验证「我们算的 L_FM == dots.tts 自己算的 fm_loss」。
-- **触发信号**：L_FM 量级异常、与 dots.tts 训练日志的 fm_loss 对不上。
+## 风险③ FM 接缝是否正确（已实现，开训前必自检）
+- **为什么要紧**：`fm_loss` 若构造错，DPO 损失就是错的。
+- **现状**：`dots_preprocess.py` 已复用 dots.tts 真实 `BasicTtsPipeline.process_sample` + `PadCollator`；per-sample L_FM 取自 `model(prepare_training_batch(batch))` 的 `loss_terms["fm_loss"]`；数据契约(sr / `audio_samples_per_llm_token=hop_size×patch_size`)从模型派生 —— 与训练器 L210-215 强校验一致。
+- **缓解（必做）**：开训前在 GPU 跑 `python alignment/check_fm_loss.py`，确认三项 PASS：①FM 有限值（接缝通）②同 RNG 决定论（命门）③不同 RNG 有差异。
+- **触发信号**：check 报 FAIL；或 L_FM 量级异常（与 dots.tts 训练日志 fm_loss 不在一个量级）。
 
 ## 风险④ 流式/离线 SIM 不可比
 - **为什么要紧**：流式克隆仅 x-vector（无 prompt_text 续接），与离线条件不同。

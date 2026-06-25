@@ -2,40 +2,57 @@
 dots_preprocess.py — 唯一对接 dots.tts 内部预处理的「适配器」(seam)
 
 做什么:
-    把 (text, 音频, 参考) 转成 dots.tts 训练样本所需的张量:
-    连续 latent(AudioVAE 编码)、g_cond(CAM++ x-vector)、token schedule、fm_patch_mask、
-    以及可选的 ce/eos 监督项。所有与 dots.tts 内部耦合都收敛到这一个文件。
-怎么做:
-    复用 dots.tts 的:
-      - `DotsTtsModel.from_pretrained` 取 audio_vae / speaker encoder / tokenizer；
-      - AudioVAE.encode(wav) → latent；SpeakerXVectorFeatures(prompt) → g_cond；
-      - 数据管线的 token 拼接(model.py 的 prepare_training_batch / data/ 的 tokenizing)。
+    把 (fid, text, audio) 转成 dots.tts 训练样本，并 collate 成模型可吃的 batch。
+    所有与 dots.tts 内部的耦合都收敛到这一个文件。
+怎么做（已对照源码核验，复用 dots.tts 真实组件）:
+    - 每样本: `BasicTtsPipeline.process_sample({fid,text,audio})`
+      (src/dots_tts/data/pipelines/tts_pipeline.py:69/161) —— 它做重采样/静音规整/对齐/分词/fbank，
+      产出 input_ids/labels/loss_mask/sample/sample_length/num_*_tokens/fbank/fbank_length。
+    - 成批: `PadCollator(tokenizer)` (src/dots_tts/data/collator.py:39) —— pad 成 batch dict。
+    - 前向: `model.prepare_training_batch(batch)` 补 loss_masks，再 `model(prepared)` 得 LossTerms。
+    数据超参从模型派生(与训练器 L210-215 的强校验一致)，不硬编码:
+      train_audio_sample_rate = model.config.vocoder.sample_rate
+      audio_samples_per_llm_token = model.hop_size * model.config.patch_size
 为什么这么设计:
-    把「与 dots.tts 内部的全部耦合」隔离到单一适配器 → 上游(data_pairs)无需了解内部，
-    dots.tts 版本变动时只改这一处。
+    复用 dots.tts 自己的 per-sample 处理 + collator，保证我们喂给模型的张量与它训练时**完全同构**；
+    map-style + 确定性顺序，便于 DPO 把 win/lose 行对齐。
 对实验意义:
-    它产出的 `fm_patch_mask` 与 `target` 正是 DPO 损失的输入；正确性直接决定方法是否成立。
+    它产出的 batch 决定 `fm_loss` 是否正确 —— 方法成立的接缝。`check_fm_loss.py` 做自检。
 
-⚠️ 这是「待按 dots.tts 确切签名补全」的适配器：标了 TODO 的几处需对照
-   `参考代码/dots.tts/src/dots_tts/models/dots_tts/model.py`(prepare_training_batch ~L1184,
-   _compute_loss_terms ~L1156) 与 `data/` 管线补齐。本机只语法检查。
+前置条件: 可 import dots_tts；有 dots.tts-base 权重。
+预期结果: process()→ 单样本 dict；collate()→ batch；prepare_and_forward()→ LossTerms。
+⚠️ 本机只语法检查（不执行 import torch / dots_tts）。
 """
 
 from __future__ import annotations
 
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from common import ensure_dots_tts_importable  # noqa: E402
 
 
 class DotsPreprocessor:
+    """持有 model + 可独立 pickle 的 pipeline/collator（供 DataLoader worker 用）。"""
+
     def __init__(self, model):
+        ensure_dots_tts_importable()
+        from dots_tts.data.pipelines.tts_pipeline import BasicTtsPipeline  # type: ignore
+        from dots_tts.data.collator import PadCollator  # type: ignore
+
         self.model = model
-        # 取出 dots.tts 内部子模块（名称对照 modules/ 目录）
-        self.audio_vae = getattr(model, "audio_vae", None) or getattr(model.core, "audio_vae", None)
-        self.tokenizer = getattr(model, "tokenizer", None)
+        self.tokenizer = model.tokenizer
+        # 从模型派生数据契约（与 scripts/train_dots_tts.py:210-215 的强校验一致）
+        sr = int(model.config.vocoder.sample_rate)
+        aspt = int(model.hop_size) * int(model.config.patch_size)
+        data_cfg = SimpleNamespace(train_audio_sample_rate=sr, audio_samples_per_llm_token=aspt)
+        # pipeline/collator 只依赖 tokenizer + 超参 → 可 pickle，能丢进 DataLoader worker
+        self.pipeline = BasicTtsPipeline(self.tokenizer, data_cfg)
+        self.collator = PadCollator(self.tokenizer)
+        self.sample_rate = sr
+        self.audio_samples_per_llm_token = aspt
 
     @classmethod
     def from_pretrained(cls, ckpt: str) -> "DotsPreprocessor":
@@ -44,29 +61,17 @@ class DotsPreprocessor:
         model = DotsTtsModel.from_pretrained(ckpt).eval()
         return cls(model)
 
-    def prepare_sample(self, text: str, audio: str, prompt_audio: str,
-                       prompt_text: str, lang: str) -> dict:
-        """单条样本预处理。返回 DPO/训练前向所需的全部张量。
-
-        TODO(对照 dots.tts):
-          1. wav = load_48k(audio); latent = self.audio_vae.encode(wav)
-          2. g_cond = speaker_features(prompt_audio)
-          3. schedule = build_generation_schedule(tokenizer(text), latent)   # data/tokenizing.py
-          4. fm_patch_mask = 音频 span 掩码                                    # model.py prepare_training_batch
-        这里返回结构占位，键名与 losses_dpo / train_dots_tts_dpo 的读取一致。
-        """
-        import torch  # type: ignore
-        # —— 占位实现：真实张量在 GPU 机器上由上述 TODO 步骤产出 ——
-        return {
-            "text": text, "audio": audio, "lang": lang,
-            "latents": None,          # AudioVAE 编码后的连续 latent
-            "g_cond": None,           # x-vector 说话人条件
-            "input_ids": None,        # 文本+音频 token schedule
-            "fm_patch_mask": None,    # (P,) 音频 span 掩码
-            "_device_placeholder": torch.device("cpu"),
-        }
+    # --- 单样本 / 成批（这两个只用 pipeline/collator，可在 worker 进程里跑）---
+    def process(self, fid: str, text: str, audio: str, source_name: str = "dpo") -> dict:
+        return self.pipeline.process_sample(
+            {"fid": str(fid), "text": text, "audio": audio, "source_name": source_name}
+        )
 
     def collate(self, samples: list[dict]) -> dict:
-        """把若干样本 pad 成 batch。可直接复用 dots.tts data/collator.py 的 collator；
-        此处给出统一接口，内部 TODO 调用其 pad 逻辑。"""
-        return {"samples": samples, "device": "cuda"}
+        return self.collator(samples)
+
+    # --- 前向（在主进程、GPU 上）---
+    def prepare_and_forward(self, batch: dict):
+        """batch(collate 产物) → prepare_training_batch 补 loss_masks → model(prepared) → LossTerms。"""
+        prepared = self.model.prepare_training_batch(batch)
+        return self.model(prepared)

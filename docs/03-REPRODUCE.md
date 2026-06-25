@@ -37,6 +37,10 @@ python pairs/build_preference_pairs.py --rewards reward/out/rewards_weronly.json
 
 ## 3. 对齐训练（产出各 treatment）
 ```bash
+# ★ 开训前自检（命门）：FM 接缝通 + 同 RNG 决定论 + 不同 RNG 有差异，三项 PASS 再训
+python alignment/check_fm_loss.py --ckpt rednote-hilab/dots.tts-base \
+       --manifest data/prompts/dots_manifest_train.jsonl
+
 accelerate launch alignment/train_dots_tts_dpo.py --config configs/dpo_multiobj_fullparam.yaml   # 头条
 accelerate launch alignment/train_dots_tts_dpo.py --config configs/dpo_weronly.yaml               # reward-hacking 臂
 accelerate launch alignment/train_open_soar.py    --config configs/open_soar_selfcorrect.yaml     # 中间臂
