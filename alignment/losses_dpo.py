@@ -73,6 +73,29 @@ def dpo_loss(
     )
 
 
+def supervised_loss(loss_terms, weights=None):
+    """标准监督损失（SFT 用）：ce/fm/eos 各自 mask-平均后加权求和 = dots.tts 训练目标。
+
+    loss_terms: dots.tts `model(prepared)` 返回的 dict[str, LossTerm]。
+    weights: {"ce_weight","fm_weight","eos_weight"}，缺省全 1.0。
+    """
+    weights = weights or {}
+    w = {"ce_loss": float(weights.get("ce_weight", 1.0)),
+         "fm_loss": float(weights.get("fm_weight", 1.0)),
+         "eos_loss": float(weights.get("eos_weight", 1.0))}
+    total = None
+    parts = {}
+    for name, term in loss_terms.items():
+        if name not in w:
+            continue
+        denom = term.mask.sum().clamp_min(1.0)
+        scalar = (term.loss * term.mask).sum() / denom
+        parts[name] = float(scalar.item())
+        contrib = w[name] * scalar
+        total = contrib if total is None else total + contrib
+    return total, parts
+
+
 def anchor_sft_loss(fm_term=None, ce_term=None, eos_term=None, lam: float = 0.1) -> torch.Tensor:
     """winners 上的 CE+EOS anchor 正则，防文本条件/停止预测漂移。
 

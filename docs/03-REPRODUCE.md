@@ -51,11 +51,11 @@ bash run_full_dataprep.sh data/prompts/dots_manifest_train.jsonl 6 16 2>&1 | tee
 python alignment/check_fm_loss.py --ckpt rednote-hilab/dots.tts-base \
        --manifest data/prompts/dots_manifest_train.jsonl
 
-accelerate launch alignment/train_dots_tts_dpo.py --config configs/dpo_multiobj_fullparam.yaml   # 头条
-accelerate launch alignment/train_dots_tts_dpo.py --config configs/dpo_weronly.yaml               # reward-hacking 臂
-accelerate launch alignment/train_open_soar.py    --config configs/open_soar_selfcorrect.yaml     # 中间臂
-accelerate launch alignment/train_dots_tts_dpo.py --config configs/sft_baseline.yaml              # 控制变量
-# A6000 档: 改用 configs/dpo_lora.yaml
+accelerate launch alignment/train_dots_tts_dpo.py --config configs/dpo_multiobj_fullparam.yaml   # 头条(RQ1)
+accelerate launch alignment/train_dots_tts_dpo.py --config configs/dpo_weronly.yaml               # reward-hacking 臂(RQ3)
+accelerate launch alignment/train_open_soar.py    --config configs/open_soar_selfcorrect.yaml     # 自校正(RQ4)
+accelerate launch alignment/train_sft.py          --config configs/sft_baseline.yaml              # 控制变量(仅winners)
+# base 不训（评测时直接用 rednote-hilab/dots.tts-base）。A6000 档: dpo 改 configs/dpo_lora.yaml
 
 # 看训练曲线（任选）：
 #   实时 TensorBoard（需 SSH 端口转发 ssh -L 6006:localhost:6006 user@server）

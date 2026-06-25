@@ -14,7 +14,7 @@ log_interval: 10
 save_interval: 500
 
 # 直接用训练音频清单（偏轨样本在训练内构造，无需 pairs）
-train_manifest: ./data/prompts/ljspeech_train.jsonl
+train_manifest: ./data/prompts/dots_manifest_train.jsonl
 
 dpo:
   base_ckpt: rednote-hilab/dots.tts-base

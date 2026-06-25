@@ -56,7 +56,9 @@ class DpoTrainer:
         self.tokenizer = self.policy.tokenizer
         self.sample_rate = int(self.policy.config.vocoder.sample_rate)
         self.aspt = int(self.policy.hop_size) * int(self.policy.config.patch_size)
-        if self.dpo.get("lora", {}).get("enabled"):
+        if cfg.get("mode") == "sft":
+            self.ref = None                       # SFT 是标准监督训练，不需要参考模型
+        elif self.dpo.get("lora", {}).get("enabled"):
             from lora_adapter import wrap_lora  # type: ignore
             self.policy = wrap_lora(self.policy, self.dpo["lora"])
             self.ref = None                       # LoRA: ref = disable_adapter() 的同一模型
