@@ -66,11 +66,14 @@ python alignment/plot_metrics.py --run alignment/out/dpo_multiobj
 
 ## 4. 合成 + 评测（离线 + 流式）
 ```bash
-# 由 ablation 一键编排（推荐）；也可手动逐 treatment 跑
-python ablation/run_matrix.py --manifest data/prompts/ljspeech_eval.jsonl --lang en --nfe 10 --dry-run  # 先看命令
-python ablation/run_matrix.py --manifest data/prompts/ljspeech_eval.jsonl --lang en --nfe 4 8 10 16     # NFE 迁移消融
+# 一键编排：5 个 treatment(含 base) × {离线,流式} 合成 → score_synth(WER/SIM/UTMOS) → 流式指标
+python ablation/run_matrix.py --manifest data/prompts/dots_manifest_eval.jsonl --nfe 10 --dry-run  # 先看命令
+python ablation/run_matrix.py --manifest data/prompts/dots_manifest_eval.jsonl --nfe 10            # 真跑(默认 ecapa SIM)
+#   评测用 score_synth（复用 reward 的 transformers-Whisper/ECAPA/torch.hub-UTMOS 后端，
+#   不用 seed-tts-eval shell，避免 s3prl/select.py 依赖坑）。
+#   NFE 迁移消融: --nfe 4 8 10 16    指定 treatment: --treatments base dpo_multiobj dpo_weronly
 # EmergentTTS 单独跑（需先 clone）
-python eval/run_emergent_tts.py --ckpt alignment/out/dpo_multiobj --treatment dpo_multiobj
+python eval/run_emergent_tts.py --ckpt alignment/out/dpo_multiobj --treatment dpo_multiobj_nfe10
 ```
 
 ## 5. 汇总

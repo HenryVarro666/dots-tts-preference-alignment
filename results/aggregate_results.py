@@ -30,22 +30,19 @@ from common import PATHS, read_jsonl  # noqa: E402
 RESULTS = PATHS.results_dir
 
 
-def _load_utmos(tag: str) -> float | None:
-    p = RESULTS / f"{tag}.utmos.jsonl"
-    if not p.exists():
-        return None
-    xs = [r["utmos"] for r in read_jsonl(p)]
-    return sum(xs) / len(xs) if xs else None
-
-
-def _load_streaming(tag: str) -> dict:
-    p = RESULTS / f"{tag}.streaming.json"
+def _load_json(name: str) -> dict:
+    p = RESULTS / name
     return json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}
 
 
-def _load_emergent(tag: str) -> dict:
-    p = RESULTS / f"{tag}.emergent.json"
-    return json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}
+def _fmt(v, ci=None, nd=4):
+    """数字 + 可选 CI（小样本评测应连 CI 一起看）。"""
+    if v is None:
+        return ""
+    s = f"{v:.{nd}f}"
+    if ci and ci[0] is not None:
+        s += f" [{ci[0]:.{nd}f},{ci[1]:.{nd}f}]"
+    return s
 
 
 def _md_table(headers: list[str], rows: list[list]) -> str:
@@ -64,54 +61,60 @@ def main() -> None:
     master_rows = []
     for run in ledger:
         tag = run["tag"]
-        utmos = _load_utmos(tag)
-        st = _load_streaming(tag)
-        em = _load_emergent(tag)
+        off = _load_json(f"{tag}.summary.json")          # score_synth 离线 WER/SIM/UTMOS(+CI)
+        stm = _load_json(f"{tag}_stream.summary.json")   # score_synth 流式 WER/SIM
+        st = _load_json(f"{tag}.streaming.json")         # streaming_metrics 首包/边界
+        em = _load_json(f"{tag}.emergent.json")          # EmergentTTS(可选)
         master_rows.append({
-            "treatment": run["treatment"], "tag": tag, "nfe": run["nfe"],
-            # WER/SIM 由 seed-tts-eval 终端输出，用户回填这两列（或解析其输出文件）
-            "wer": run.get("wer"), "sim": run.get("sim"), "utmos": utmos,
+            "treatment": run["treatment"], "tag": tag, "nfe": run["nfe"], "n": off.get("n"),
+            "wer": off.get("wer"), "wer_ci": off.get("wer_ci"),
+            "sim": off.get("sim"), "sim_ci": off.get("sim_ci"),
+            "utmos": off.get("utmos"), "utmos_ci": off.get("utmos_ci"),
             "emergent_overall": em.get("overall"),
+            "stream_wer": stm.get("wer"), "stream_sim": stm.get("sim"),
             "first_packet_ms_p50": (st.get("first_packet_ms") or {}).get("p50"),
             "boundary_discont": st.get("boundary_discontinuity_p95_flux"),
             "ckpt": run["ckpt"],  # 溯源
         })
 
     RESULTS.mkdir(parents=True, exist_ok=True)
-    # master.csv
     if master_rows:
+        flat = [{k: (v if not isinstance(v, (list, tuple)) else json.dumps(v)) for k, v in r.items()}
+                for r in master_rows]
         with (RESULTS / "master.csv").open("w", newline="", encoding="utf-8") as f:
-            w = csv.DictWriter(f, fieldnames=list(master_rows[0].keys()))
-            w.writeheader()
-            w.writerows(master_rows)
+            w = csv.DictWriter(f, fieldnames=list(flat[0].keys()))
+            w.writeheader(); w.writerows(flat)
 
-    # Table 1 主表（离线）
+    # Table 1 主表（离线，带 CI）
     main_tbl = _md_table(
-        ["treatment", "NFE", "WER↓", "SIM↑", "UTMOS↑", "EmergentTTS↑"],
-        [[r["treatment"], r["nfe"], r["wer"], r["sim"], r["utmos"], r["emergent_overall"]]
-         for r in master_rows])
-    (RESULTS / "main_table.md").write_text("# Table 1 主表（离线）\n\n" + main_tbl, encoding="utf-8")
+        ["treatment", "NFE", "n", "WER↓", "SIM↑", "UTMOS↑", "EmergentTTS↑"],
+        [[r["treatment"], r["nfe"], r["n"], _fmt(r["wer"], r["wer_ci"]),
+          _fmt(r["sim"], r["sim_ci"]), _fmt(r["utmos"], r["utmos_ci"], 3),
+          _fmt(r["emergent_overall"], None, 3)] for r in master_rows])
+    (RESULTS / "main_table.md").write_text(
+        "# Table 1 主表（离线；[..]为 bootstrap 95% CI）\n\n" + main_tbl +
+        "\n> 小样本评测请以 CI 重叠与否判断显著性，勿只看均值。\n", encoding="utf-8")
 
     # Table 2 流式表
     st_tbl = _md_table(
-        ["treatment", "NFE", "首包 p50(ms)↓", "边界不连续度↓"],
-        [[r["treatment"], r["nfe"], r["first_packet_ms_p50"], r["boundary_discont"]]
+        ["treatment", "NFE", "流式WER↓", "流式SIM↑", "首包 p50(ms)↓", "边界不连续度↓"],
+        [[r["treatment"], r["nfe"], _fmt(r["stream_wer"]), _fmt(r["stream_sim"]),
+          _fmt(r["first_packet_ms_p50"], None, 1), _fmt(r["boundary_discont"], None, 4)]
          for r in master_rows])
     (RESULTS / "streaming_table.md").write_text("# Table 2 流式表\n\n" + st_tbl, encoding="utf-8")
 
-    # Table 3 reward-hacking 对照（突出 WER↓ 但 UTMOS/EmergentTTS↓ 的反差）
-    hack_rows = [r for r in master_rows if r["treatment"] in ("dpo_multiobj", "dpo_weronly")]
+    # Table 3 reward-hacking 对照
+    hack_rows = [r for r in master_rows if r["treatment"] in ("dpo_multiobj", "dpo_weronly", "base")]
     hack_tbl = _md_table(
-        ["treatment", "WER↓", "UTMOS↑", "EmergentTTS↑", "判读"],
-        [[r["treatment"], r["wer"], r["utmos"], r["emergent_overall"],
-          "仅WER：看是否 WER 最低但 UTMOS/Emergent 退化"] for r in hack_rows])
+        ["treatment", "WER↓", "UTMOS↑", "EmergentTTS↑"],
+        [[r["treatment"], _fmt(r["wer"], r["wer_ci"]), _fmt(r["utmos"], r["utmos_ci"], 3),
+          _fmt(r["emergent_overall"], None, 3)] for r in hack_rows])
     (RESULTS / "reward_hacking.md").write_text(
         "# Table 3 reward hacking 对照\n\n" + hack_tbl +
-        "\n> 结论判读见 PROTOCOL.md 第 6 节；若仅WER未退化自然度→多目标前提不成立，如实报告。\n",
-        encoding="utf-8")
+        "\n> 判读(PROTOCOL §6)：dpo_weronly 若 **WER 最低但 UTMOS/EmergentTTS 退化** = 复现 reward hacking；"
+        "若仅WER未伤自然度→多目标前提不成立，如实报告。\n", encoding="utf-8")
 
-    print(f"✓ 汇总 {len(master_rows)} 个 run -> results/out/{{master.csv,main_table.md,streaming_table.md,reward_hacking.md}}")
-    print("  注: WER/SIM 两列需从 seed-tts-eval 输出回填(或扩展本脚本解析其输出文件)")
+    print(f"✓ 汇总 {len(master_rows)} 个 run -> results/out/{{master.csv, main_table.md, streaming_table.md, reward_hacking.md}}")
 
 
 if __name__ == "__main__":
