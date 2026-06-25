@@ -53,6 +53,8 @@ def main() -> None:
     ap.add_argument("--sim-backend", choices=["ecapa", "wavlm"], default="ecapa")
     ap.add_argument("--nfe", type=int, nargs="+", default=[10], help="部署 NFE（迁移消融可给多个）")
     ap.add_argument("--treatments", nargs="*", default=None, help="只跑这些 treatment（默认全部）")
+    ap.add_argument("--skip-streaming", action="store_true",
+                    help="跳过流式合成+流式评测（离线 RQ1/RQ3 主证据先跑通；流式单独补）")
     ap.add_argument("--dry-run", action="store_true", help="只打印命令、写账本，不真正执行")
     args = ap.parse_args()
     treatments = {k: v for k, v in TREATMENTS.items() if not args.treatments or k in args.treatments}
@@ -64,23 +66,24 @@ def main() -> None:
             off_dir = PROJ / "inference" / "out" / tag
             st_dir = PROJ / "inference" / "out_streaming" / tag
             # 1) 离线 + 流式合成
+            # 1) 离线合成 + 打分（RQ1/RQ3 主证据）
             _run(["python", str(PROJ / "inference" / "batch_synthesize.py"),
                   "--ckpt", ckpt, "--manifest", args.manifest, "--treatment", tag,
                   "--num-steps", str(nfe), "--out", str(off_dir)], args.dry_run)
-            _run(["python", str(PROJ / "inference" / "batch_synthesize_streaming.py"),
-                  "--ckpt", ckpt, "--manifest", args.manifest, "--treatment", tag,
-                  "--num-steps", str(nfe)], args.dry_run)
-            # 2) 评测：统一 score_synth(WER/SIM/UTMOS，复用 reward 后端)——离线 + 流式
-            #    （不用 seed-tts-eval shell：那套带 s3prl/select.py 依赖坑，见 docs/05 B-4/B-5）
+            #    score_synth: 统一 WER/SIM/UTMOS（复用 reward 后端，不用 seed-tts-eval shell，见 docs/05 B-4/B-5）
             _run(["python", str(PROJ / "eval" / "score_synth.py"),
                   "--synth-dir", str(off_dir), "--manifest", args.manifest,
                   "--treatment", tag, "--sim-backend", args.sim_backend], args.dry_run)
-            _run(["python", str(PROJ / "eval" / "score_synth.py"),
-                  "--synth-dir", str(st_dir), "--manifest", args.manifest,
-                  "--treatment", f"{tag}_stream", "--sim-backend", args.sim_backend], args.dry_run)
-            # 流式专属：首包延迟 / RTF / 边界不连续度
-            _run(["python", str(PROJ / "eval" / "streaming_metrics.py"),
-                  "--streaming-dir", str(st_dir), "--treatment", tag], args.dry_run)
+            # 2) 流式合成 + 打分 + 流式指标（可 --skip-streaming 跳过）
+            if not args.skip_streaming:
+                _run(["python", str(PROJ / "inference" / "batch_synthesize_streaming.py"),
+                      "--ckpt", ckpt, "--manifest", args.manifest, "--treatment", tag,
+                      "--num-steps", str(nfe)], args.dry_run)
+                _run(["python", str(PROJ / "eval" / "score_synth.py"),
+                      "--synth-dir", str(st_dir), "--manifest", args.manifest,
+                      "--treatment", f"{tag}_stream", "--sim-backend", args.sim_backend], args.dry_run)
+                _run(["python", str(PROJ / "eval" / "streaming_metrics.py"),
+                      "--streaming-dir", str(st_dir), "--treatment", tag], args.dry_run)
             ledger.append({"treatment": treat, "tag": tag, "ckpt": ckpt, "nfe": nfe,
                            "manifest": args.manifest, "offline_dir": str(off_dir),
                            "streaming_dir": str(st_dir)})
