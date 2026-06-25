@@ -41,8 +41,8 @@ def _spectral_flux_tail(wav_path: str) -> float:
     """全局谱通量的 p95 作为不连续度代理（边界突变会拉高尾部）。"""
     import librosa  # type: ignore
     import numpy as np  # type: ignore
-    y, sr = librosa.load(wav_path, sr=24000)
-    S = np.abs(librosa.stft(y, n_fft=1024, hop_length=256))
+    y, sr = librosa.load(wav_path, sr=None)  # 读原生采样率(dots.tts 为 48kHz)，硬编码 24k 会丢高频
+    S = np.abs(librosa.stft(y, n_fft=2048, hop_length=512))  # 48kHz 下放大窗口，保持时间分辨率
     flux = np.sqrt(((np.diff(S, axis=1)) ** 2).sum(axis=0))
     return float(np.percentile(flux, 95)) if flux.size else 0.0
 

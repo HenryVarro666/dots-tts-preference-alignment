@@ -61,11 +61,9 @@ def main() -> None:
     args = ap.parse_args()
 
     ensure_dots_tts_importable()
-    try:
-        from dots_tts.utils.util_module import seed_everything  # type: ignore
-    except Exception:  # 路径随版本微调，兜底为 no-op
-        def seed_everything(_s):  # type: ignore
-            pass
+    # 正确模块是 dots_tts.utils.util（不是 util_module）；旧的 try/except 会静默吞掉 ImportError，
+    # 导致 seed_everything 变 no-op、种子从未生效。直接 import（缺了就该报错，别静默）。
+    from dots_tts.utils.util import seed_everything  # type: ignore
 
     grid = _grid_points(DEFAULT_GRID, args.k)
     prompts = list(read_jsonl(args.prompts))

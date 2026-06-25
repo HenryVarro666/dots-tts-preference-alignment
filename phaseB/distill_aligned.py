@@ -31,11 +31,14 @@ def main() -> None:
     args = ap.parse_args()
 
     meanflow = PATHS.dots_tts_repo / "scripts" / "train_dots_tts_meanflow.py"
+    # 真实 CLI 参数名(对照 train_dots_tts_meanflow.py argparse)：teacher 路径是 --teacher-model-path；
+    # teacher ODE 步数是 --teacher-steps；没有 --student_steps(student NFE 在推理期设)。
     cmd = ["accelerate", "launch", str(meanflow),
            "--config", args.config,
-           # 下列覆盖项需对照 train_dots_tts_meanflow.py 的 MeanFlowSettings 字段名
-           f"--teacher_ckpt={args.teacher}", f"--student_steps={args.target_steps}"]
+           f"--teacher-model-path={args.teacher}", f"--teacher-steps={args.target_steps}"]
     print("$", " ".join(cmd))
+    print("  ⚠️ Phase B 门控：--config 需为标准 AppConfig 格式(train_data/loss/train 三节，"
+          "见 dots.tts/configs/dots_tts.yaml)，非本项目 dpo config 的平铺格式。")
     print("  (teacher=对齐模型；验证「对齐能否在少步蒸馏后存活」)")
     if not args.dry_run:
         subprocess.run(cmd, check=True)

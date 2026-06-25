@@ -35,19 +35,19 @@ WER_BATCH="${3:-16}"
 
 ts() { date +"%H:%M:%S"; }   # 仅打印用，与实验无关
 
-echo "[$(ts)] [1/6] 候选生成  prompts=${PROMPTS}  K=${K}  (最耗时, ~3h/188prompt)"
+echo "[$(ts)] [1/7] 候选生成  prompts=${PROMPTS}  K=${K}  (最耗时, ~3h/188prompt)"
 python candidates/generate_candidates.py --prompts "${PROMPTS}" --k "${K}"
 
-echo "[$(ts)] [2/6] WER 打分 (Whisper-large-v3, 批量)"
+echo "[$(ts)] [2/7] WER 打分 (Whisper-large-v3, 批量)"
 python reward/score_wer.py --batch-size "${WER_BATCH}"
 
-echo "[$(ts)] [3/6] UTMOS 打分 (torch.hub utmos22_strong)"
+echo "[$(ts)] [3/7] UTMOS 打分 (torch.hub utmos22_strong)"
 python reward/score_utmos.py
 
-echo "[$(ts)] [4/6] SIM 打分 (SpeechBrain ECAPA; 单说话人语料 SIM 区分度有限)"
+echo "[$(ts)] [4/7] SIM 打分 (SpeechBrain ECAPA; 单说话人语料 SIM 区分度有限)"
 python reward/score_sim.py --backend ecapa
 
-echo "[$(ts)] [5/6] 聚合奖励: 多目标 + 仅WER(reward-hacking 对照)"
+echo "[$(ts)] [5/7] 聚合奖励: 多目标 + 仅WER(reward-hacking 对照)"
 python reward/aggregate_reward.py --w-wer 0.4 --w-sim 0.3 --w-utmos 0.3 \
        --out reward/out/rewards.jsonl
 python reward/aggregate_reward.py --w-wer 1 --w-sim 0 --w-utmos 0 \

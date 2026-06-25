@@ -10,6 +10,8 @@ warmup_steps: 50
 gradient_accumulation_steps: 4
 micro_batch_size: 1
 grad_clip_norm: 1.0
+weight_decay: 0.01            # 与 dpo_multiobj 一致：RQ3 两臂只应差在 pairs/reward
+num_workers: 2
 log_interval: 10
 save_interval: 100000  # 只在末尾存一次（save_pretrained 每次写整模型~数GB）
 
