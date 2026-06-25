@@ -174,15 +174,29 @@ class DpoTrainer:
                 "reward_margin": round(stats.reward_margin, 5),
                 "fm_w": round(stats.fm_pol_win, 4), "fm_l": round(stats.fm_pol_lose, 4)}
 
-    def save(self, out_dir: str, step: int):
-        import json
-        meta = {"alignment": "dpo", "beta": self.beta,
-                "reward_weights": self.dpo.get("reward_weights"),
-                "pairs": self.dpo.get("pairs_file"), "step": step}
+    def save_inference_ckpt(self, out_dir: str, meta: dict):
+        """存成 dots.tts `from_pretrained` 可加载的格式（inference/eval 用）。
+
+        关键：**不能用 accelerator.save_state**（那是 state_dict+optimizer+rng 的续训格式，
+        from_pretrained 加载不了）。要用 dots.tts 自己的 model.save_pretrained，写出
+        config.json/llm_config.json/tokenizer/latent_stats.pt/model|vocoder|speaker_encoder.safetensors。
+        """
+        if not self.accel.is_main_process:
+            return
         Path(out_dir).mkdir(parents=True, exist_ok=True)
         (Path(out_dir) / "alignment_meta.json").write_text(
             json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
-        self.accel.save_state(out_dir)
+        model = self.accel.unwrap_model(self.policy)
+        # LoRA: 合并适配器再存（merge_and_unload 会改动模型，故 LoRA 建议只在训练结束存一次）
+        if hasattr(model, "merge_and_unload"):
+            model = model.merge_and_unload()
+        model.save_pretrained(out_dir)
+
+    def save(self, out_dir: str, step: int):
+        self.save_inference_ckpt(out_dir, {
+            "alignment": "dpo", "beta": self.beta,
+            "reward_weights": self.dpo.get("reward_weights"),
+            "pairs": self.dpo.get("pairs_file"), "step": step})
 
 
 def _to_device(batch: dict, device):
