@@ -35,6 +35,14 @@ python pairs/build_preference_pairs.py --rewards reward/out/rewards_weronly.json
 # ↑ 检查 aggregate 打印的「候选池奖励方差」，太小回 ②加大网格
 ```
 
+## 2.5 全量数据准备（挂 tmux 后台，~3h）
+```bash
+tmux new -s dataprep
+# 候选→打分(WER/SIM/UTMOS)→聚合(多目标+仅WER)→两套偏好对，一条龙：
+bash run_full_dataprep.sh data/prompts/dots_manifest_train.jsonl 6 16 2>&1 | tee logs_dataprep.txt
+# Ctrl-b d 脱离；tmux attach -t dataprep 回来看
+```
+
 ## 3. 对齐训练（产出各 treatment）
 ```bash
 # ★ 开训前自检（命门）：FM 接缝通 + 同 RNG 决定论 + 不同 RNG 有差异，三项 PASS 再训
@@ -46,6 +54,12 @@ accelerate launch alignment/train_dots_tts_dpo.py --config configs/dpo_weronly.y
 accelerate launch alignment/train_open_soar.py    --config configs/open_soar_selfcorrect.yaml     # 中间臂
 accelerate launch alignment/train_dots_tts_dpo.py --config configs/sft_baseline.yaml              # 控制变量
 # A6000 档: 改用 configs/dpo_lora.yaml
+
+# 看训练曲线（任选）：
+#   实时 TensorBoard（需 SSH 端口转发 ssh -L 6006:localhost:6006 user@server）
+tensorboard --logdir alignment/out/dpo_multiobj/tb --port 6006
+#   或 离线出 PNG（免端口转发，scp 回本地看）
+python alignment/plot_metrics.py --run alignment/out/dpo_multiobj
 ```
 
 ## 4. 合成 + 评测（离线 + 流式）

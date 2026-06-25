@@ -95,6 +95,7 @@ def main() -> None:
         for batch in loader:
             with trainer.accel.accumulate(trainer.policy):
                 logs = trainer.train_step(batch)
+            trainer.log_step(step, logs)  # TB + metrics.jsonl（继承自 DpoTrainer）
             if trainer.accel.is_main_process and step % cfg.get("log_interval", 10) == 0:
                 print(f"step {step}: {logs}")
             step += 1
@@ -104,6 +105,7 @@ def main() -> None:
                 done = True
                 break
     trainer.save(cfg["output_dir"], step)
+    trainer.close_logging()
     if trainer.accel.is_main_process:
         print(f"✓ open-SOAR(近似) 完成，{step} 步 -> {cfg['output_dir']}")
 
