@@ -24,9 +24,23 @@ from __future__ import annotations
 import json
 import os
 import sys
+import warnings
 from dataclasses import dataclass, asdict, field
 from pathlib import Path
 from typing import Any, Iterable, Iterator
+
+
+# --------------------------------------------------------------------------- #
+# 静音「已知良性」warning（详见 docs/05 §C）。每个脚本都 import common，一处生效、全项目干净。
+# 原则：只压不影响结果的提示，且 **保留真实下载进度条**（大文件首次下载时需要看到）。
+#   - TRANSFORMERS_VERBOSITY=error：压 transformers 的「model type 'dots_tts'」与
+#     「tokenizer incorrect regex / fix_mistral_regex」提示（后者**绝不能真去改**，会损坏分词）。
+#   - weight_norm FutureWarning：来自 dots.tts 的 BigVGAN vocoder 用了旧 torch API，dots.tts 内部、与我们无关。
+# 用 setdefault：用户可用环境变量覆盖（如想看全部 warning，导出 TRANSFORMERS_VERBOSITY=warning）。
+# --------------------------------------------------------------------------- #
+os.environ.setdefault("TRANSFORMERS_VERBOSITY", "error")
+os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
+warnings.filterwarnings("ignore", message=r".*weight_norm.*is deprecated.*")
 
 
 # --------------------------------------------------------------------------- #
