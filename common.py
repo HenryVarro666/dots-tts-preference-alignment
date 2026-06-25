@@ -98,20 +98,21 @@ def _resolve_paths() -> _Paths:
     project_root = _THIS.parent
     deps = project_root / ".deps"
 
-    dots_repo = _first_existing(
-        [Path(os.environ["DOTS_TTS_REPO"]).resolve()] if os.environ.get("DOTS_TTS_REPO") else [],
-        Path(),
-    ) if os.environ.get("DOTS_TTS_REPO") else _first_existing(
-        [repo_root / "参考代码" / "dots.tts", deps / "dots.tts"],
-        deps / "dots.tts",
-    )
-    seed_eval = _first_existing(
-        [Path(os.environ["SEED_TTS_EVAL"]).resolve()] if os.environ.get("SEED_TTS_EVAL") else [],
-        Path(),
-    ) if os.environ.get("SEED_TTS_EVAL") else _first_existing(
-        [repo_root / "参考代码" / "seed-tts-eval", deps / "seed-tts-eval"],
-        deps / "seed-tts-eval",
-    )
+    def _env_or_search(env_key: str, search: list[Path], default: Path) -> Path:
+        """env var 设了就用它（不存在则 **fail-fast**，别静默回退到 cwd 导致后面 import 报莫名错）；
+        没设则按 知识库内 → .deps/ 顺序查找。"""
+        val = os.environ.get(env_key)
+        if val:
+            p = Path(val).expanduser().resolve()
+            if not p.exists():
+                raise FileNotFoundError(f"{env_key} 指向不存在的路径: {p}")
+            return p
+        return _first_existing(search, default)
+
+    dots_repo = _env_or_search(
+        "DOTS_TTS_REPO", [repo_root / "参考代码" / "dots.tts", deps / "dots.tts"], deps / "dots.tts")
+    seed_eval = _env_or_search(
+        "SEED_TTS_EVAL", [repo_root / "参考代码" / "seed-tts-eval", deps / "seed-tts-eval"], deps / "seed-tts-eval")
     return _Paths(
         repo_root=repo_root,
         project_root=project_root,
@@ -179,7 +180,8 @@ class RewardRow:
     sim: float               # 越高越好
     utmos: float             # 越高越好
     reward: float            # 聚合奖励 R（z-norm 后加权），越高越好
-    # 归一化前的 z 分量，便于事后审计权重影响
+    # z 分量（便于审计权重影响）。注意 wer_z 已**取反**（= −z(WER)）：正值代表 WER 低于均值(好)，
+    # 与 sim_z/utmos_z 方向一致，可直接 R = w_wer·wer_z + w_sim·sim_z + w_utmos·utmos_z。
     wer_z: float = 0.0
     sim_z: float = 0.0
     utmos_z: float = 0.0
