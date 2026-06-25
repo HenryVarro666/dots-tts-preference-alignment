@@ -15,8 +15,15 @@ score_wer.py — 阶段③a：候选的 WER（可懂性，越低越好）
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
+
+# 把 transformers 的提示性 warning 压到 error 级（只屏蔽 warning/info，真正 error 仍显示）。
+# 这些是良性提示（Whisper 的 SuppressTokens 处理器二选一、BPE 清理空格——我们 _normalize 后无影响）。
+# 必须在 import transformers 之前设环境变量；pipeline 是惰性导入的，这里设置即可生效。
+os.environ.setdefault("TRANSFORMERS_VERBOSITY", "error")
+os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")  # 顺带消除 tokenizers fork 警告
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from common import PATHS, read_jsonl, write_jsonl  # noqa: E402
@@ -41,6 +48,8 @@ class _ASR:
             return
         import torch  # type: ignore
         from transformers import pipeline  # type: ignore
+        from transformers.utils import logging as hf_logging  # type: ignore
+        hf_logging.set_verbosity_error()  # 兜底：即便 transformers 已被别处 import，也压住提示
         use_cuda = torch.cuda.is_available()
         self._whisper = pipeline(
             "automatic-speech-recognition",
