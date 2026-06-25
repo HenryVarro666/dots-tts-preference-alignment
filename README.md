@@ -42,6 +42,7 @@ Phase B  少步蒸馏(NFE 1~2) + INT8/INT4 量化 → 塞进 8GB Turing（对接
 1. 先读 [`docs/00-总览与步骤详解.md`](docs/00-总览与步骤详解.md)——理解「为什么管线长这样」。
 2. 方法细节看 [`docs/01-METHOD.md`](docs/01-METHOD.md)；关键设计抉择看 [`docs/02-DECISIONS.md`](docs/02-DECISIONS.md)。
 3. 真要跑：按 [`docs/03-REPRODUCE.md`](docs/03-REPRODUCE.md) 在 GPU 机器上逐步执行，边跑边填 [`docs/RUN_JOURNAL_TEMPLATE.md`](docs/RUN_JOURNAL_TEMPLATE.md)。
+4. **遇到报错/warning**：先查 [`docs/05-踩坑与修复记录.md`](docs/05-踩坑与修复记录.md)——已记录所有遇到过的错误、warning、改进（现象/根因/修复/为什么/commit）。
 
 ## 🚀 远程服务器快速开始（独立部署）
 
