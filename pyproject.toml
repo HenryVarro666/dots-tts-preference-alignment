@@ -17,7 +17,8 @@ license = "Apache-2.0"             # SPDX 字符串（新 setuptools 要求；�
 # 增量依赖（dots.tts 已含 torch>=2.8 / torchaudio / transformers>=4.57 / torchdiffeq /
 # accelerate>=1.12 / librosa / soundfile / einops / safetensors / loguru，本表不再重复）
 dependencies = [
-    "speechmos>=0.0.1",   # UTMOS 自然度代理（reward 的第三目标 + 评测）；PyPI 最新仅 0.0.1.x
+    # UTMOS 不走 pip：用 torch.hub 加载 tarepan/SpeechMOS 的 utmos22_strong（见 utmos_backend.py）。
+    # PyPI 的 speechmos 是微软 DNSMOS/PLCMOS，不含 utmos，故不依赖它。
     "jiwer>=3.0.0",       # WER 计算（seed-tts-eval 亦用）
     "peft>=0.13.0",       # LoRA（A6000 档默认；ref = disable_adapter()）
     "deepspeed>=0.15.0",  # ZeRO-2/3（full-param DPO 在 2 卡上的显存分片）
