@@ -29,11 +29,10 @@ import argparse
 import sys
 from pathlib import Path
 
-# 顶部先导入 torch/torchaudio：让标准库 select/subprocess 先解析并缓存，
+# 顶部先导入 torch：让标准库 select/subprocess 先解析并缓存，
 # 避免之后任何 sys.path 改动把 seed-tts-eval/.../select.py 误当标准库 select。
 import torch  # noqa: E402
 import torch.nn.functional as F  # noqa: E402
-import torchaudio  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from common import PATHS, read_jsonl, write_jsonl  # noqa: E402
@@ -42,12 +41,15 @@ _DEFAULT_CKPT = PATHS.project_root / ".ckpt" / "wavlm_large_finetune.pth"
 
 
 def _load_16k_mono(path: str) -> "torch.Tensor":
-    wav, sr = torchaudio.load(path)
-    if wav.size(0) > 1:
-        wav = wav.mean(dim=0, keepdim=True)
-    if sr != 16000:
-        wav = torchaudio.functional.resample(wav, sr, 16000)
-    return wav  # (1, T)
+    """加载音频为 16kHz 单声道 (1, T)。
+
+    用 librosa 而非 torchaudio.load：新版 torchaudio 的 load 改走 torchcodec 后端，
+    未装 torchcodec 会报 ImportError；librosa（已装）走 soundfile，一步完成加载+重采样+下混，
+    与 dots.tts 自身的音频读取一致、无额外依赖。
+    """
+    import librosa  # type: ignore
+    y, _ = librosa.load(path, sr=16000, mono=True)  # numpy (T,)
+    return torch.from_numpy(y).unsqueeze(0)  # (1, T)
 
 
 class _EcapaBackend:
@@ -60,7 +62,7 @@ class _EcapaBackend:
         if self._clf is not None:
             return
         from speechbrain.inference.speaker import EncoderClassifier  # type: ignore
-        dev = "cuda" if torch.cuda.is_available() else "cpu"
+        dev = "cuda:0" if torch.cuda.is_available() else "cpu"  # SpeechBrain 要 cuda:N 格式
         self._clf = EncoderClassifier.from_hparams(
             source="speechbrain/spkrec-ecapa-voxceleb",
             run_opts={"device": dev},
