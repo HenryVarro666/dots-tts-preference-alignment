@@ -28,6 +28,9 @@ from common import PATHS, RewardRow, read_jsonl, write_jsonl, zscore  # noqa: E4
 
 
 def _index(path: Path, key: str) -> dict[tuple, float]:
+    """读打分文件为 {(fid,k): value}；文件不存在则返回空 dict（容错，便于跳过某指标）。"""
+    if not Path(path).exists():
+        return {}
     out = {}
     for r in read_jsonl(path):
         out[(r["fid"], r["k"])] = float(r[key])
@@ -45,6 +48,19 @@ def main() -> None:
     wer = _index(PATHS.rewards_dir / "wer.jsonl", "wer")
     sim = _index(PATHS.rewards_dir / "sim.jsonl", "sim")
     utm = _index(PATHS.rewards_dir / "utmos.jsonl", "utmos")
+    if not wer:
+        raise SystemExit("缺 reward/out/wer.jsonl —— 先跑 score_wer.py（WER 是必需项）")
+
+    # 缺哪个打分文件就把它的权重强制为 0 并告警（容错：冒烟阶段常先跳过 SIM）
+    w_wer, w_sim, w_utmos = args.w_wer, args.w_sim, args.w_utmos
+    if not utm and w_utmos > 0:
+        print("⚠️ 缺 utmos.jsonl → w-utmos 置 0（先跑 score_utmos.py 可纳入）"); w_utmos = 0.0
+    if not sim and w_sim > 0:
+        print("⚠️ 缺 sim.jsonl → w-sim 置 0（放好 WavLM ckpt 或用 score_sim.py --backend ecapa 后可纳入）"); w_sim = 0.0
+    tot = w_wer + w_sim + w_utmos
+    if tot <= 0:
+        raise SystemExit("三项权重全为 0，无法聚合")
+
     lang = {(r["fid"], r["k"]): r.get("lang", "") for r in read_jsonl(PATHS.rewards_dir / "wer.jsonl")}
     audio = {(r["fid"], r["k"]): r["audio"] for r in read_jsonl(PATHS.rewards_dir / "wer.jsonl")}
 
@@ -62,8 +78,8 @@ def main() -> None:
         utm_z = zscore([utm.get((fid, k), 0.0) for k in ks])
         rewards_here = []
         for i, k in enumerate(ks):
-            # 注意 WER 越低越好，故取 −WER_z
-            R = args.w_wer * (-wer_z[i]) + args.w_sim * sim_z[i] + args.w_utmos * utm_z[i]
+            # 注意 WER 越低越好，故取 −WER_z；权重为缺文件后修正过的有效权重
+            R = w_wer * (-wer_z[i]) + w_sim * sim_z[i] + w_utmos * utm_z[i]
             rewards_here.append(R)
             rows.append(RewardRow(
                 fid=fid, k=k, audio=audio[(fid, k)], lang=lang.get((fid, k), ""),
@@ -77,7 +93,9 @@ def main() -> None:
     n = write_jsonl(args.out, rows)
     avg_var = sum(variances) / len(variances) if variances else 0.0
     print(f"✓ 聚合奖励 {n} 条 -> {args.out}")
-    print(f"  权重 (wer,sim,utmos)=({args.w_wer},{args.w_sim},{args.w_utmos})")
+    print(f"  有效权重 (wer,sim,utmos)=({w_wer},{w_sim},{w_utmos})"
+          + ("" if (w_wer, w_sim, w_utmos) == (args.w_wer, args.w_sim, args.w_utmos)
+             else f"  [原始 {args.w_wer},{args.w_sim},{args.w_utmos}，缺文件项已置 0]"))
     print(f"  候选池平均奖励方差 = {avg_var:.4f}  (太小→偏好信号弱，需加大候选多样性，见 docs/04-RISKS 风险①)")
 
 
