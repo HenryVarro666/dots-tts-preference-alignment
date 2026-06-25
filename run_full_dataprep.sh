@@ -53,11 +53,15 @@ python reward/aggregate_reward.py --w-wer 0.4 --w-sim 0.3 --w-utmos 0.3 \
 python reward/aggregate_reward.py --w-wer 1 --w-sim 0 --w-utmos 0 \
        --out reward/out/rewards_weronly.jsonl
 
-echo "[$(ts)] [6/6] 构造偏好对: 多目标 / 仅WER"
+echo "[$(ts)] [6/7] 构造偏好对: 多目标 / 仅WER"
 python pairs/build_preference_pairs.py --rewards reward/out/rewards.jsonl \
        --strategy best_worst --out pairs/out/pairs_best_worst.jsonl
 python pairs/build_preference_pairs.py --rewards reward/out/rewards_weronly.jsonl \
        --strategy best_worst --out pairs/out/pairs_weronly.jsonl
 
+echo "[$(ts)] [7/7] 抽取 winners 清单（SFT 控制变量用）"
+python pairs/extract_winners.py --pairs pairs/out/pairs_best_worst.jsonl \
+       --out pairs/out/winners_only.jsonl
+
 echo "[$(ts)] ✓ 数据准备完成。下一步: 依次训练各 treatment（见 docs/03-REPRODUCE.md 第3节）"
-echo "  pairs: $(wc -l < pairs/out/pairs_best_worst.jsonl) 对(多目标) / $(wc -l < pairs/out/pairs_weronly.jsonl) 对(仅WER)"
+echo "  pairs: $(wc -l < pairs/out/pairs_best_worst.jsonl) 对(多目标) / $(wc -l < pairs/out/pairs_weronly.jsonl) 对(仅WER) / $(wc -l < pairs/out/winners_only.jsonl) winners"
