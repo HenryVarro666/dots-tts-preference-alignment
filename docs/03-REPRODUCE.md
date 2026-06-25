@@ -14,9 +14,14 @@ accelerate config
 
 ## 1. 数据（公开集）
 ```bash
-bash data/fetch_public_corpora.sh      # 为什么: 仅用公开集（无私有数据）
-python data/prepare_prompts.py --corpus ljspeech --root data/corpora/ljspeech48k --limit 200  # 先小跑打通
-# 跑通后再上 VCTK / AISHELL-3 全量
+# LJSpeech-48kHz：dots.tts 下载器一步下载+解包+产出 {fid,audio,text} manifest（audio 为绝对路径）
+python .deps/dots.tts/scripts/prepare_train_jsonl_manifest.py --output-dir data/corpora/ljspeech48k --valid-size 0
+#   ↑ 独立部署时 dots.tts 在 .deps/；在知识库内则是 参考代码/dots.tts/。--help 看全部参数。
+
+# 直接读该 manifest（最稳），先取 200 条打通
+python data/prepare_prompts.py --corpus dots_manifest \
+       --source data/corpora/ljspeech48k/ljspeech_48khz_manifest_train.jsonl --lang en --limit 200
+# 跑通后再上 VCTK / AISHELL-3 全量（--corpus vctk/aishell3 --source <语料目录>），见 data/fetch_public_corpora.sh
 ```
 
 ## 2. 候选 → 打分 → 偏好对
