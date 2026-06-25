@@ -21,6 +21,10 @@ dependencies = [
     # PyPI 的 speechmos 是微软 DNSMOS/PLCMOS，不含 utmos，故不依赖它。
     "jiwer>=3.0.0",       # WER 计算（seed-tts-eval 亦用）
     "speechbrain>=1.0.0", # SIM 的默认后端（ECAPA-TDNN，自动下模型；对榜可选 seed-tts-eval WavLM）
+    # librosa/soundfile 本是 dots.tts 的依赖，但曾在装 speechbrain 时被解析卸掉过；
+    # 显式钉住作护栏，确保 `pip install -e .` 后 dots.tts runtime（import librosa）与音频读写不缺包。
+    "librosa>=0.11.0",
+    "soundfile>=0.12.0",
     "peft>=0.13.0",       # LoRA（A6000 档默认；ref = disable_adapter()）
     "deepspeed>=0.15.0",  # ZeRO-2/3（full-param DPO 在 2 卡上的显存分片）
     "pyyaml>=6.0",        # 配置解析（dots.tts 也用）
