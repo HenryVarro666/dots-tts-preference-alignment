@@ -6,7 +6,7 @@ output_dir: ./alignment/out/dpo_multiobj
 
 # --- 训练（仿 dots.tts train schema） ---
 learning_rate: 1.0e-5
-max_train_steps: 1500
+max_train_steps: 600    # 防过拟合：1500(8ep)→600(~3ep)
 warmup_steps: 50
 gradient_accumulation_steps: 4
 micro_batch_size: 1
@@ -19,8 +19,8 @@ num_workers: 2
 # --- 偏好对齐（本实验新增） ---
 dpo:
   base_ckpt: rednote-hilab/dots.tts-base
-  beta: 0.1
-  lambda_sft: 0.1                 # winners 上的 anchor SFT 正则
+  beta: 0.2                       # 0.1→0.2 收紧漂移
+  lambda_sft: 0.5             # 0.1→0.5 强化 FM 声学 anchor（防全局漂移）                 # winners 上的 anchor SFT 正则
   pairs_file: ./pairs/out/pairs_best_worst.jsonl
   reward_weights: { wer: 0.4, sim: 0.3, utmos: 0.3 }   # 记录用（实际奖励在 reward/ 阶段算）
   lora: { enabled: false }        # 全参；A6000 档改 dpo_lora.yaml

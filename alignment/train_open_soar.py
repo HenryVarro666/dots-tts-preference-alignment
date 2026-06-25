@@ -71,7 +71,10 @@ class OpenSoarTrainer(DpoTrainer):
         stats = dpo_loss(fm_c_pol, fm_c_ref, fm_p_pol, fm_p_ref, beta=self.beta)
         loss = stats.loss
         if self.lam_sft > 0:
-            loss = loss + anchor_sft_loss(ce_term=ce_w, eos_term=eos_w, lam=self.lam_sft)
+            # FM anchor 在干净样本上（防全局声学漂移）+ ce/eos；这是 SFT 正则，非外部奖励，
+            # open_soar 仍是 reward-free（不含 WER/SIM/UTMOS）。
+            loss = loss + self.lam_sft * (fm_c_pol.mean()
+                                          + anchor_sft_loss(ce_term=ce_w, eos_term=eos_w, lam=1.0))
 
         self.accel.backward(loss)
         if self.accel.sync_gradients:
