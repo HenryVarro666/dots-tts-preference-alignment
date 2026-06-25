@@ -60,7 +60,9 @@ class DpoTrainer:
             self.policy = wrap_lora(self.policy, self.dpo["lora"])
             self.ref = None                       # LoRA: ref = disable_adapter() 的同一模型
         else:
-            self.ref = load_dots_model(base).eval().requires_grad_(False)
+            # 冻结 ref 不经 accelerator.prepare（不参与 DDP），需**手动搬到设备**，
+            # 否则前向时 batch 在 cuda、ref 权重在 cpu → RuntimeError(Input cuda vs weight cpu)。
+            self.ref = load_dots_model(base).eval().requires_grad_(False).to(self.accel.device)
         self.policy.train()
 
         self.opt = torch.optim.AdamW(
