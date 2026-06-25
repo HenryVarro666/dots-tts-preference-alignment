@@ -41,7 +41,7 @@ class DpoTrainer:
     def __init__(self, cfg: dict):
         ensure_dots_tts_importable()
         from accelerate import Accelerator  # type: ignore
-        from dots_tts.models.dots_tts.model import DotsTtsModel  # type: ignore
+        from dots_preprocess import load_dots_model  # type: ignore  # 解析 repo id→本地路径
 
         self.cfg = cfg
         self.dpo = cfg["dpo"]
@@ -50,7 +50,7 @@ class DpoTrainer:
             mixed_precision="bf16",
         )
         base = self.dpo["base_ckpt"]
-        self.policy = DotsTtsModel.from_pretrained(base)
+        self.policy = load_dots_model(base)
         # 在任何包装(LoRA/accelerate)前，从原始模型捕获数据契约，供 data_pairs 建 pipeline/collator
         self.tokenizer = self.policy.tokenizer
         self.sample_rate = int(self.policy.config.vocoder.sample_rate)
@@ -60,7 +60,7 @@ class DpoTrainer:
             self.policy = wrap_lora(self.policy, self.dpo["lora"])
             self.ref = None                       # LoRA: ref = disable_adapter() 的同一模型
         else:
-            self.ref = DotsTtsModel.from_pretrained(base).eval().requires_grad_(False)
+            self.ref = load_dots_model(base).eval().requires_grad_(False)
         self.policy.train()
 
         self.opt = torch.optim.AdamW(
