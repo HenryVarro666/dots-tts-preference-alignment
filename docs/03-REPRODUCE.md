@@ -36,9 +36,11 @@ python pairs/build_preference_pairs.py --rewards reward/out/rewards_weronly.json
 ```
 
 ## 2.5 全量数据准备（挂 tmux 后台，~3h）
+> ⚠️ **新 tmux/终端不继承 venv**！进了 tmux 先激活（或直接用脚本——它会自动激活 venv）。
 ```bash
 tmux new -s dataprep
-# 候选→打分(WER/SIM/UTMOS)→聚合(多目标+仅WER)→两套偏好对，一条龙：
+source .venv/bin/activate            # 关键：新会话必须激活 venv（which python 应是 .venv/...）
+# 候选→打分(WER/SIM/UTMOS)→聚合(多目标+仅WER)→两套偏好对，一条龙（脚本顶部也会自动 source venv）：
 bash run_full_dataprep.sh data/prompts/dots_manifest_train.jsonl 6 16 2>&1 | tee logs_dataprep.txt
 # Ctrl-b d 脱离；tmux attach -t dataprep 回来看
 ```
