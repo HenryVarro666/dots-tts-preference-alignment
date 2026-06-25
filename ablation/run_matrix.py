@@ -90,6 +90,8 @@ def main() -> None:
     print(f"✓ 账本 {len(ledger)} 行 -> {out}")
     if args.dry_run:
         print("  (dry-run：未真正执行，仅打印命令 + 写账本)")
+    print("  注: EmergentTTS(表现力) 不在本编排内——需另跑 eval/run_emergent_tts.py --treatment <tag>，"
+          "否则 aggregate 的 EmergentTTS 列为空（不报错）。")
 
 
 if __name__ == "__main__":
