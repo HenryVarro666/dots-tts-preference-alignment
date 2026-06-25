@@ -49,11 +49,8 @@ class SftTrainer(DpoTrainer):
                 "eos": round(parts.get("eos_loss", 0.0), 4)}
 
     def save(self, out_dir: str, step: int):
-        import json
-        Path(out_dir).mkdir(parents=True, exist_ok=True)
-        (Path(out_dir) / "alignment_meta.json").write_text(
-            json.dumps({"alignment": "sft", "step": step}, ensure_ascii=False, indent=2), encoding="utf-8")
-        self.accel.save_state(out_dir)
+        # 复用 DpoTrainer.save_inference_ckpt：存 dots.tts from_pretrained 可加载的格式
+        self.save_inference_ckpt(out_dir, {"alignment": "sft", "step": step})
 
 
 def main() -> None:

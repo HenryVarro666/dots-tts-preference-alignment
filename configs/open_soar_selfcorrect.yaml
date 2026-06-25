@@ -11,7 +11,7 @@ gradient_accumulation_steps: 4
 micro_batch_size: 1
 grad_clip_norm: 1.0
 log_interval: 10
-save_interval: 500
+save_interval: 100000  # 只在末尾存一次（save_pretrained 每次写整模型~数GB）
 
 # 直接用训练音频清单（偏轨样本在训练内构造，无需 pairs）
 train_manifest: ./data/prompts/dots_manifest_train.jsonl
