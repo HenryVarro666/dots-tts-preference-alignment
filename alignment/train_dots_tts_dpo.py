@@ -108,6 +108,17 @@ class DpoTrainer:
             self.writer.close()
 
     # --- 关键：在「共享 RNG 状态」下跑一次前向，取 per-sample L_FM ---------- #
+    def _advance_global_rng(self):
+        """每个训练 step 开头推进一次全局 RNG，使各步采样到**不同**的 (x0,t,z)。
+
+        命门细节：`_fm_per_sample` 在 `fork_rng` 内跑，退出时把全局 RNG 恢复到进入前——
+        所以一个 train_step 结束后全局 RNG 不变；而 DataLoader 只在每个 epoch 开头推进一次 RNG。
+        若不在此手动推进，则**同一 epoch 内所有 step 共用同一噪声**（DPO 退化为对单噪声过拟合）。
+        在 capture 之前推进一次 → 步间噪声不同；步内 rng_w==rng_l 仍保证 policy/ref/win/lose 四前向共享同一 (x0,t,z)。"""
+        torch.rand(1)
+        if torch.cuda.is_available():
+            torch.rand(1, device=self.accel.device)
+
     def _capture_rng(self):
         cpu = torch.get_rng_state()
         cuda = torch.cuda.get_rng_state(self.accel.device) if torch.cuda.is_available() else None
@@ -146,8 +157,9 @@ class DpoTrainer:
         win = _to_device(win, self.accel.device)
         lose = _to_device(lose, self.accel.device)
 
+        self._advance_global_rng()    # 每步推进，使各步噪声不同（否则同 epoch 内共用一个噪声）
         rng_w = self._capture_rng()   # win 这一对（policy/ref）共享的状态
-        rng_l = self._capture_rng()   # lose 这一对共享的状态（与 win 同起点，近似共享 t）
+        rng_l = self._capture_rng()   # lose 这一对共享的状态（与 win 同起点，按 Diffusion-DPO 共享 (x0,t)）
 
         fm_pol_w, ce_w, eos_w = self._fm_per_sample(self.policy, win, rng_w, grad=True, want_sft=True)
         fm_ref_w = self._ref_forward(win, rng_w)
@@ -199,11 +211,17 @@ class DpoTrainer:
             "pairs": self.dpo.get("pairs_file"), "step": step})
 
 
-def _to_device(batch: dict, device):
-    out = {}
-    for k, v in batch.items():
-        out[k] = v.to(device) if isinstance(v, torch.Tensor) else v
-    return out
+def _to_device(obj, device):
+    """递归把张量搬到设备：必须穿透嵌套 dict（如 prepare_training_batch 产出的
+    loss_masks={"ce_loss":..,"fm_loss":..,"eos_loss":..}），否则 mask 留在 CPU、与 GPU pred 相乘报错。
+    （当前靠 accelerate 的 prepared loader 递归搬运侥幸不崩，但这里自身也要正确，防脱离 accelerate 时炸。）"""
+    if isinstance(obj, torch.Tensor):
+        return obj.to(device)
+    if isinstance(obj, dict):
+        return {k: _to_device(v, device) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return type(obj)(_to_device(v, device) for v in obj)
+    return obj
 
 
 def main() -> None:

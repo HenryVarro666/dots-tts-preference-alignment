@@ -19,11 +19,11 @@ def wrap_lora(model, lora_cfg: dict):
     """给模型注入 LoRA。返回带 `disable_adapter()` 上下文的 PEFT 模型。"""
     from peft import LoraConfig, get_peft_model  # type: ignore
 
+    # 注意：dots.tts 的 DiT 注意力投影是 q_proj/k_proj/v_proj/o_proj、FFN 是 fc1/fc2
+    # （已核对 modules/backbone/layers.py）；**没有** to_q/to_k/to_v/to_out（PEFT 会静默忽略不存在的名）。
     targets = lora_cfg.get("target_modules", [
-        # DiT 头(声学渲染)：对齐主要作用处
-        "to_q", "to_k", "to_v", "to_out", "fc1", "fc2",
-        # 可选：LLM 注意力(语义规划)
-        "q_proj", "k_proj", "v_proj", "o_proj",
+        "q_proj", "k_proj", "v_proj", "o_proj",  # DiT + Qwen2 注意力（同名）
+        "fc1", "fc2",                            # DiT FFN
     ])
     cfg = LoraConfig(
         r=lora_cfg.get("r", 16),

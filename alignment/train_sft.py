@@ -33,6 +33,10 @@ from losses_dpo import supervised_loss  # noqa: E402
 class SftTrainer(DpoTrainer):
     """标准监督微调：单样本前向 + ce/fm/eos 加权损失（无 DPO、无 ref）。"""
 
+    def __init__(self, cfg: dict):
+        super().__init__(cfg)
+        self.ref = None  # SFT 不需要 ref；自保证（不依赖 config 里写没写 mode:sft）
+
     def train_step(self, batch) -> dict:
         sample = _to_device(self.policy.prepare_training_batch(batch["sample"]), self.accel.device)
         loss_terms = self.policy(sample)

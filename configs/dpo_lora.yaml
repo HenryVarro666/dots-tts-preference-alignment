@@ -24,5 +24,5 @@ dpo:
     r: 16
     alpha: 32
     dropout: 0.05
-    # target_modules 名称需对照 dots.tts dit.py / Qwen2 实际层名
-    target_modules: [to_q, to_k, to_v, to_out, fc1, fc2, q_proj, k_proj, v_proj, o_proj]
+    # 已对照 dots.tts modules/backbone/layers.py：实际层名是 q/k/v/o_proj + fc1/fc2（无 to_q/to_out）
+    target_modules: [q_proj, k_proj, v_proj, o_proj, fc1, fc2]

@@ -39,12 +39,18 @@ class OpenSoarTrainer(DpoTrainer):
     def _perturb_waveform(self, batch: dict) -> dict:
         """对 collate 后 batch 的 'sample' 波形加高斯噪声，构造 off-trajectory(扰动) 样本。
 
-        扰动会经 vocoder.extract_latents 传到 FM 目标，使模型学「偏好干净>偏好扰动」。
+        扰动经 vocoder.extract_latents 传到 FM 目标。**关键**：必须删掉预算好的 fbank/fbank_lengths，
+        否则 xvector_extractor 检测到 fbank 存在就走「裁剪预算 fbank」分支、用**干净音频**的说话人条件，
+        导致 loser 的 FM 目标(扰动) 与 说话人条件(干净) 不一致——删掉后 xvector 会从扰动 sample 实时重算。
+        噪声强度按**逐样本** std 标定（全局 std 在批内响度差异大时不均匀）。
         """
         out = dict(batch)
         s = batch["sample"]
         scale = float(self.dpo.get("soar_noise_scale", 0.5))
-        out["sample"] = s + torch.randn_like(s) * (scale * s.std().clamp_min(1e-6))
+        per_sample_std = s.std(dim=-1, keepdim=True).clamp_min(1e-6)
+        out["sample"] = s + torch.randn_like(s) * (scale * per_sample_std)
+        out.pop("fbank", None)            # 让 xvector 从扰动 sample 重算，而非用干净缓存
+        out.pop("fbank_lengths", None)
         return out
 
     def train_step(self, batch) -> dict:
@@ -53,6 +59,7 @@ class OpenSoarTrainer(DpoTrainer):
         clean = _to_device(self.policy.prepare_training_batch(clean_raw), self.accel.device)
         pert = _to_device(self.policy.prepare_training_batch(pert_raw), self.accel.device)
 
+        self._advance_global_rng()    # 每步推进，使各步噪声不同
         rng_c = self._capture_rng()
         rng_p = self._capture_rng()
         fm_c_pol, ce_w, eos_w = self._fm_per_sample(self.policy, clean, rng_c, grad=True, want_sft=True)
@@ -71,7 +78,13 @@ class OpenSoarTrainer(DpoTrainer):
             self.accel.clip_grad_norm_(self.policy.parameters(), self.cfg.get("grad_clip_norm", 1.0))
             self.opt.step()
             self.opt.zero_grad(set_to_none=True)
-        return {"loss": float(loss.item()), "reward_acc": stats.reward_accuracy}
+        return {"loss": round(float(loss.item()), 4), "reward_acc": round(stats.reward_accuracy, 3)}
+
+    def save(self, out_dir: str, step: int):
+        # 元数据标记为 open_soar（别继承 DpoTrainer 的 "dpo"），保证 treatment 可溯源
+        self.save_inference_ckpt(out_dir, {
+            "alignment": "open_soar", "beta": self.beta,
+            "soar_noise_scale": self.dpo.get("soar_noise_scale", 0.5), "step": step})
 
 
 def main() -> None:
