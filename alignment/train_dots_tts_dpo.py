@@ -120,18 +120,24 @@ class DpoTrainer:
         fm_ref_l = self._ref_forward(lose, rng_l)
 
         stats = dpo_loss(fm_pol_w, fm_ref_w, fm_pol_l, fm_ref_l, beta=self.beta)
+        dpo_val = float(stats.loss.item())
         loss = stats.loss
+        sft_val = 0.0
         if self.lam_sft > 0:
-            loss = loss + anchor_sft_loss(ce_term=ce_w, eos_term=eos_w, lam=self.lam_sft)
+            sft = anchor_sft_loss(ce_term=ce_w, eos_term=eos_w, lam=self.lam_sft)
+            loss = loss + sft
+            sft_val = float(sft.item())
 
         self.accel.backward(loss)
         if self.accel.sync_gradients:
             self.accel.clip_grad_norm_(self.policy.parameters(), self.cfg.get("grad_clip_norm", 1.0))
             self.opt.step()
             self.opt.zero_grad(set_to_none=True)
-        return {"loss": float(loss.item()), "reward_margin": stats.reward_margin,
-                "reward_acc": stats.reward_accuracy,
-                "fm_w": stats.fm_pol_win, "fm_l": stats.fm_pol_lose}
+        # dpo=纯偏好损失(应随训练↓)、sft=anchor 正则、reward_acc/margin=DPO 健康信号
+        return {"dpo": round(dpo_val, 4), "sft": round(sft_val, 4),
+                "reward_acc": round(stats.reward_accuracy, 3),
+                "reward_margin": round(stats.reward_margin, 5),
+                "fm_w": round(stats.fm_pol_win, 4), "fm_l": round(stats.fm_pol_lose, 4)}
 
     def save(self, out_dir: str, step: int):
         import json
@@ -167,17 +173,22 @@ def main() -> None:
     trainer.policy, trainer.opt, loader = trainer.accel.prepare(trainer.policy, trainer.opt, loader)
 
     max_steps = int(cfg["max_train_steps"])
+    # 跨 epoch 续训：数据集小于 max_steps 时反复过 loader，直到达到 max_steps
+    # （否则只跑一个 epoch 就退出，max_train_steps 形同虚设）。
     step = 0
-    for batch in loader:
-        with trainer.accel.accumulate(trainer.policy):
-            logs = trainer.train_step(batch)
-        if trainer.accel.is_main_process and step % cfg.get("log_interval", 10) == 0:
-            print(f"step {step}: {logs}")
-        if step and step % cfg.get("save_interval", 500) == 0:
-            trainer.save(cfg["output_dir"], step)
-        step += 1
-        if step >= max_steps:
-            break
+    done = False
+    while not done:
+        for batch in loader:
+            with trainer.accel.accumulate(trainer.policy):
+                logs = trainer.train_step(batch)
+            if trainer.accel.is_main_process and step % cfg.get("log_interval", 10) == 0:
+                print(f"step {step}: {logs}")
+            step += 1
+            if step % cfg.get("save_interval", 500) == 0:
+                trainer.save(cfg["output_dir"], step)
+            if step >= max_steps:
+                done = True
+                break
     trainer.save(cfg["output_dir"], step)
     if trainer.accel.is_main_process:
         print(f"✓ DPO 完成，{step} 步 -> {cfg['output_dir']}")

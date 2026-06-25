@@ -88,15 +88,21 @@ def main() -> None:
     loader = build_single_dataloader(cfg, trainer)
     trainer.policy, trainer.opt, loader = trainer.accel.prepare(trainer.policy, trainer.opt, loader)
 
+    max_steps = int(cfg["max_train_steps"])
     step = 0
-    for batch in loader:
-        with trainer.accel.accumulate(trainer.policy):
-            logs = trainer.train_step(batch)
-        if trainer.accel.is_main_process and step % cfg.get("log_interval", 10) == 0:
-            print(f"step {step}: {logs}")
-        step += 1
-        if step >= int(cfg["max_train_steps"]):
-            break
+    done = False
+    while not done:  # 跨 epoch 续训直到 max_steps（见 train_dots_tts_dpo 同款说明）
+        for batch in loader:
+            with trainer.accel.accumulate(trainer.policy):
+                logs = trainer.train_step(batch)
+            if trainer.accel.is_main_process and step % cfg.get("log_interval", 10) == 0:
+                print(f"step {step}: {logs}")
+            step += 1
+            if step % cfg.get("save_interval", 500) == 0:
+                trainer.save(cfg["output_dir"], step)
+            if step >= max_steps:
+                done = True
+                break
     trainer.save(cfg["output_dir"], step)
     if trainer.accel.is_main_process:
         print(f"✓ open-SOAR(近似) 完成，{step} 步 -> {cfg['output_dir']}")
