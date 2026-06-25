@@ -7,7 +7,7 @@
 ```bash
 bash env/setup_env.sh                  # 为什么: 固化 dots.tts + seed-tts-eval + speechmos + WavLM ckpt
 source .venv/bin/activate
-python -c "import dots_tts, speechmos, jiwer, peft; print('ok')"
+python -c "import dots_tts, jiwer, peft; print('ok')"
 # 配 accelerate（2×H100 建议 deepspeed zero_stage=2, bf16）
 accelerate config
 ```

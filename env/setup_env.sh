@@ -9,7 +9,7 @@
 # 对实验意义: 环境可复现是「数字可信」的前提；版本飘了指标就不可比。
 #
 # 前置条件: NVIDIA GPU + CUDA + Python 3.10~3.12；在 dots.tts/seed-tts-eval 已 clone 的仓库内。
-# 预期结果: `python -c "import dots_tts, speechmos, jiwer, peft"` 成功；WavLM ckpt 落地。
+# 预期结果: `python -c "import dots_tts, jiwer, peft"` 成功；WavLM ckpt 落地。
 # ⚠️ 本机(macOS/无 GPU)不要运行此脚本；仅 `bash -n` 语法检查。
 # =============================================================================
 set -euo pipefail
@@ -52,7 +52,7 @@ python -m pip install --upgrade pip wheel
 echo "[2/6] 以可编辑模式安装 dots.tts (为什么: 我们要 import 其 model/runtime/training 内部模块)"
 pip install -e "${DOTS_TTS}"
 
-echo "[3/6] 安装本实验增量依赖 (speechmos/jiwer/peft/deepspeed ...)"
+echo "[3/6] 安装本实验增量依赖 (jiwer/peft/deepspeed ...; UTMOS 走 torch.hub)"
 pip install -e "${PROJECT_ROOT}"
 
 echo "[4/6] 安装 seed-tts-eval 依赖 (WER 用 funasr/Paraformer, SIM 用 WavLM)"
@@ -86,7 +86,7 @@ cat <<EOF
 =============================================================================
 环境准备完成。验证:
   source ${VENV}/bin/activate
-  python -c "import dots_tts, speechmos, jiwer, peft; print('ok')"
+  python -c "import dots_tts, jiwer, peft; print('ok')"
 下一步: 见 docs/03-REPRODUCE.md
 =============================================================================
 EOF
