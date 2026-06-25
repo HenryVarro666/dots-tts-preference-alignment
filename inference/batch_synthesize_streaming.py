@@ -38,6 +38,7 @@ def main() -> None:
     ap.add_argument("--treatment", required=True)
     ap.add_argument("--num-steps", type=int, default=10)
     ap.add_argument("--guidance-scale", type=float, default=1.2)
+    ap.add_argument("--speaker-scale", type=float, default=1.5)  # 与离线 batch_synthesize 接口对称
     ap.add_argument("--eos-threshold", type=float, default=0.8)
     ap.add_argument("--ode-method", default="euler")
     ap.add_argument("--normalize-text", action="store_true", default=True)
@@ -64,7 +65,8 @@ def main() -> None:
         session = runtime.start_double_streaming(
             prompt_audio_path=r.get("prompt_audio"),
             ode_method=args.ode_method, num_steps=args.num_steps,
-            guidance_scale=args.guidance_scale, eos_threshold=args.eos_threshold,
+            guidance_scale=args.guidance_scale, speaker_scale=args.speaker_scale,
+            eos_threshold=args.eos_threshold,
         )
         chunks = []
         t0 = time.perf_counter()
