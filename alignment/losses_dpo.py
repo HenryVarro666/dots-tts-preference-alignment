@@ -96,21 +96,22 @@ def supervised_loss(loss_terms, weights=None):
     return total, parts
 
 
-def anchor_sft_loss(fm_term=None, ce_term=None, eos_term=None, lam: float = 0.1) -> torch.Tensor:
+def anchor_sft_loss(ce_term=None, eos_term=None, lam: float = 0.1) -> torch.Tensor:
     """winners 上的 CE+EOS anchor 正则，防文本条件/停止预测漂移。
 
     传入 winners 前向的 ce_loss / eos_loss LossTerm；按 Σ(loss*mask)/Σ(mask) 求标量后加权。
     为什么: 纯 DPO 只学相对偏好，可能让绝对文本对齐漂移；在赢样本上保留一点监督 SFT 是标准稳定化。
     """
     total = None
+    ref = None
     for term in (ce_term, eos_term):
         if term is None:
             continue
+        ref = term.loss
         denom = term.mask.sum().clamp_min(1.0)
         scalar = (term.loss * term.mask).sum() / denom
         total = scalar if total is None else total + scalar
     if total is None:
-        # 没有可用监督项时返回 0（保持计算图安全）
-        import torch as _t
-        return _t.zeros(())
+        # 没有可用监督项时返回 0（与 ce/eos 同 device，保持计算图安全）
+        return torch.zeros((), device=ref.device) if ref is not None else torch.zeros(())
     return lam * total
