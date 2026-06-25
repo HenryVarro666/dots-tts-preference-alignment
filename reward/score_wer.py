@@ -46,21 +46,27 @@ class _ASR:
             "automatic-speech-recognition",
             model=self._whisper_model,
             device=0 if use_cuda else -1,
-            torch_dtype=torch.float16 if use_cuda else torch.float32,
-            chunk_length_s=30,  # TTS 样本一般 <30s，但开 chunk 更稳
+            dtype=torch.float16 if use_cuda else torch.float32,  # 新 API（torch_dtype 已弃用）
+            # 不设 chunk_length_s：TTS 样本 <30s，Whisper 原生窗口即可，避免实验性分块警告
         )
 
-    def transcribe(self, audio: str, lang: str) -> str:
-        if lang == "zh":
-            if self._paraformer is None:
-                from funasr import AutoModel  # type: ignore
-                self._paraformer = AutoModel(model="paraformer-zh")
-            res = self._paraformer.generate(input=audio)
-            return res[0]["text"] if res else ""
-        # 默认 EN：transformers Whisper pipeline
+    def transcribe_en_batch(self, audios: list[str], batch_size: int = 8) -> list[str]:
+        """批量转写英文：一次喂一批给 pipeline（GPU 利用率远高于逐条）。"""
         self._ensure_whisper()
-        out = self._whisper(audio, generate_kwargs={"language": "en", "task": "transcribe"})
-        return out["text"] if isinstance(out, dict) else str(out)
+        outs = self._whisper(
+            list(audios), batch_size=batch_size,
+            generate_kwargs={"language": "en", "task": "transcribe"},
+        )
+        if isinstance(outs, dict):  # 传单条时 pipeline 返回 dict
+            outs = [outs]
+        return [o["text"] if isinstance(o, dict) else str(o) for o in outs]
+
+    def transcribe_zh(self, audio: str) -> str:
+        if self._paraformer is None:
+            from funasr import AutoModel  # type: ignore
+            self._paraformer = AutoModel(model="paraformer-zh")
+        res = self._paraformer.generate(input=audio)
+        return res[0]["text"] if res else ""
 
 
 def _normalize(text: str, lang: str) -> str:
@@ -83,20 +89,33 @@ def _normalize(text: str, lang: str) -> str:
 def main() -> None:
     ap = argparse.ArgumentParser(description="候选 WER 打分")
     ap.add_argument("--candidates", default=str(PATHS.candidates_dir / "candidates_index.jsonl"))
+    ap.add_argument("--batch-size", type=int, default=8, help="Whisper 批大小（GPU 利用率↑）")
     args = ap.parse_args()
 
     import jiwer  # type: ignore
     asr = _ASR()
+    cands = list(read_jsonl(args.candidates))
+    en = [c for c in cands if (c.get("lang") or "en") != "zh"]
+    zh = [c for c in cands if (c.get("lang") or "en") == "zh"]
+
     rows = []
-    for c in read_jsonl(args.candidates):
-        lang = c.get("lang", "en") or "en"
-        hyp = _normalize(asr.transcribe(c["audio"], lang), lang)
-        ref = _normalize(c["text"], lang)
-        # ZH 习惯报 CER（字级），EN 报 WER（词级）；jiwer 同一接口
-        err = jiwer.cer(ref, hyp) if lang == "zh" else jiwer.wer(ref, hyp)
-        rows.append({"fid": c["fid"], "k": c["k"], "audio": c["audio"], "lang": lang, "wer": float(err)})
+    # EN：批量转写（一次一批喂 Whisper，远快于逐条）
+    if en:
+        hyps = asr.transcribe_en_batch([c["audio"] for c in en], batch_size=args.batch_size)
+        for c, hyp in zip(en, hyps):
+            err = jiwer.wer(_normalize(c["text"], "en"), _normalize(hyp, "en"))
+            rows.append({"fid": c["fid"], "k": c["k"], "audio": c["audio"], "lang": "en", "wer": float(err)})
+    # ZH：funasr 逐条（习惯报 CER 字级）
+    for c in zh:
+        hyp = _normalize(asr.transcribe_zh(c["audio"]), "zh")
+        err = jiwer.cer(_normalize(c["text"], "zh"), hyp)
+        rows.append({"fid": c["fid"], "k": c["k"], "audio": c["audio"], "lang": "zh", "wer": float(err)})
+
+    # 还原成与候选一致的顺序（en/zh 分组后可能乱序）
+    order = {(c["fid"], c["k"]): i for i, c in enumerate(cands)}
+    rows.sort(key=lambda r: order.get((r["fid"], r["k"]), 0))
     n = write_jsonl(PATHS.rewards_dir / "wer.jsonl", rows)
-    print(f"✓ WER 打分 {n} 条 -> reward/out/wer.jsonl")
+    print(f"✓ WER 打分 {n} 条（EN 批大小={args.batch_size}）-> reward/out/wer.jsonl")
 
 
 if __name__ == "__main__":
