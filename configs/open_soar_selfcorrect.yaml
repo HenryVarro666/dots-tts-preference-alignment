@@ -19,7 +19,7 @@ train_manifest: ./data/prompts/dots_manifest_train.jsonl
 
 dpo:
   base_ckpt: rednote-hilab/dots.tts-base
-  beta: 0.2
-  lambda_sft: 0.5             # FM 声学 anchor 防漂移（SFT 正则，非外部奖励，仍 reward-free）
+  beta: 0.3                       # 中间档：0.2→0.3 放大 DPO 信号
+  lambda_sft: 0.2             # 中间档：0.5→0.2 让 DPO 有空间拉开 margin（仍防爆）
   soar_noise_scale: 0.5           # 构造 off-trajectory(偏轨)的扰动强度
   lora: { enabled: false }
