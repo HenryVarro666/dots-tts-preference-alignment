@@ -18,8 +18,31 @@ generate_candidates.py — 阶段②：用 dots.tts 对每个 prompt 采样 K �
     用原子写(.tmp→os.replace)避免半截 wav；每 10 prompt 写一次索引。重跑用**同一 --k**即可。
     全部命中缓存时连模型都不加载、秒完成。
 
+X5 settings-matched 复探针模式（--fixed-setting，新增）:
+    动机: R3/审稿人(DA)质疑「网格本身制造了 guidance↔质量 的偏相关——反相关也许只是 grid 假象」。
+        本模式**不走网格**：固定一组设置(--fix-num-steps 默认10 / --fix-guidance 默认1.2 /
+        --fix-speaker 默认1.5)，对每个 prompt 生成 K 个候选**只变 seed**(seed_k=1000+k)。
+        于是同一 prompt 的 K 个候选（含日后配成的 winner/loser）**生成设置完全相同**，
+        差异只来自采样噪声 → 仅内容/采样不同、超参零差。CandidateRow 的
+        num_steps/guidance_scale/speaker_scale 三列写**固定值**（不再逐 k 变化）。
+    落盘: wav 用独立前缀 `cand_fixed_{k}.wav`（**不复用、不污染**网格的 `cand_{k}.wav`，
+        避免续跑缓存把「网格音频」误当「settings-matched 音频」复用，破坏匹配前提）；
+        索引仍写标准 candidates_index.jsonl —— 下游 score_*/build_preference_pairs 原样可读、免改
+        （build_preference_pairs 硬编码读该标准路径）。故这批应作为**独立一轮**从头跑。
+    X5 跑序（这批从头独立跑一遍）:
+        candidates/generate_candidates.py --fixed-setting
+          → reward/score_wer + score_sim + score_utmos
+          → reward/aggregate_reward
+          → pairs/build_preference_pairs（用 --out 指定这批专属 pairs 文件）
+          → alignment/probe_fm_reward --pairs <这批 pairs>
+          → alignment/probe_analysis
+    对 claim 的意义: 若 FM-reward 与（人/自动）奖励的**反相关**在「设置完全匹配」的偏好对上**仍存活**，
+        则该反相关是 intrinsic（源自模型对采样内容的内蕴偏好），强于「网格制造的偏相关」——
+        直接堵住 R3/DA 的「grid 制造」质疑。
+
 前置条件: 已装环境(env/setup_env.sh)、已下载 dots.tts-base 权重、已生成 prompts。
-预期结果: candidates/out/{fid}/cand_{k}.wav + candidates/out/candidates_index.jsonl。
+预期结果: candidates/out/{fid}/cand_{k}.wav + candidates/out/candidates_index.jsonl
+    （--fixed-setting 时 wav 为 cand_fixed_{k}.wav，索引仍写同一 candidates_index.jsonl）。
 ⚠️ 本机(无 GPU/无权重)只语法检查；真正生成在 GPU 机器上。
 """
 
@@ -58,6 +81,13 @@ def main() -> None:
     ap.add_argument("--k", type=int, default=6)
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--precision", default="bfloat16")
+    # --- X5 settings-matched 复探针：不走网格，固定设置、只变 seed ---
+    ap.add_argument("--fixed-setting", action="store_true",
+                    help="X5 模式：跳过 DEFAULT_GRID，固定一组设置对每个 prompt 生成 K 个仅 seed 不同的候选"
+                         "（winner/loser 生成设置完全相同），堵住「grid 制造偏相关」质疑")
+    ap.add_argument("--fix-num-steps", type=int, default=10, help="--fixed-setting 下的固定 NFE")
+    ap.add_argument("--fix-guidance", type=float, default=1.2, help="--fixed-setting 下的固定 CFG")
+    ap.add_argument("--fix-speaker", type=float, default=1.5, help="--fixed-setting 下的固定 speaker_scale")
     args = ap.parse_args()
 
     ensure_dots_tts_importable()
@@ -65,7 +95,20 @@ def main() -> None:
     # 导致 seed_everything 变 no-op、种子从未生效。直接 import（缺了就该报错，别静默）。
     from dots_tts.utils.util import seed_everything  # type: ignore
 
-    grid = _grid_points(DEFAULT_GRID, args.k)
+    if args.fixed_setting:
+        # 不走网格：K 个候选共用同一组固定设置（差异只来自 seed → 采样噪声）。
+        # 复制 K 份相同 dict，下游循环 `for k, gp in enumerate(grid)` 即得 K 个仅 seed 不同的候选。
+        fixed = {"num_steps": args.fix_num_steps,
+                 "guidance_scale": args.fix_guidance,
+                 "speaker_scale": args.fix_speaker}
+        grid = [dict(fixed) for _ in range(args.k)]
+        cand_prefix = "cand_fixed_"  # 独立前缀：不复用/不污染网格的 cand_{k}.wav
+        print(f"[X5 fixed-setting] 固定 num_steps={fixed['num_steps']} "
+              f"guidance_scale={fixed['guidance_scale']} speaker_scale={fixed['speaker_scale']}；"
+              f"每 prompt {args.k} 个候选仅变 seed(1000+k) → settings-matched")
+    else:
+        grid = _grid_points(DEFAULT_GRID, args.k)
+        cand_prefix = "cand_"
     prompts = list(read_jsonl(args.prompts))
     if args.limit:
         prompts = prompts[: args.limit]
@@ -82,7 +125,7 @@ def main() -> None:
         made, reused = 0, 0
         for k, gp in enumerate(grid):
             seed = 1000 + k
-            wav_path = out_dir / f"cand_{k}.wav"
+            wav_path = out_dir / f"{cand_prefix}{k}.wav"
             row = CandidateRow(
                 fid=fid, k=k, audio=str(wav_path), text=p["text"],
                 prompt_audio=p["prompt_audio"], prompt_text=p["prompt_text"],

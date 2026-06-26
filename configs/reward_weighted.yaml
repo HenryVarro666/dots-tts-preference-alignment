@@ -1,0 +1,43 @@
+# reward_weighted.yaml — X6b：reward-weighted 回归臂（多目标奖励；**非 DPO 对比**）
+# 为什么存在: 连续-latent flow-matching 的 L_FM 与人类偏好反相关（docs §6.7），使 Diffusion-DPO 的
+#   「win 似然>lose」假设错配。本臂只朝 winner 的绝对监督目标回归、按 reward 调权，不做 win/lose 的
+#   L_FM 对比 → 从结构上绕开错配，是「建设性出路」。
+# 对实验意义: 与 sft_baseline(uniform winners) 构成「uniform vs reward-weighted」干净对照——
+#   同 winners 清单、同步数、同损失，唯一变量=按 reward 加权。若 X6b 优于 X6(sft) 且不崩，
+#   证明 reward 信号可在非错配框架内被有效利用（支撑方法贡献 Contribution-2）。
+# 用 alignment/train_reward_weighted.py 跑（继承 SftTrainer：单前向 supervised_loss × 样本权，无 ref/无配对）。
+
+output_dir: ./alignment/out/reward_weighted
+
+# --- 训练（与 sft_baseline 对齐：同步数/同 LR/同损失，保证 X6 vs X6b 唯一差异=加权） ---
+learning_rate: 1.0e-5
+max_train_steps: 1500
+warmup_steps: 50
+gradient_accumulation_steps: 4
+micro_batch_size: 1            # =1 时 exp 加权为逐样本精确 reward-weighted regression
+grad_clip_norm: 1.0
+num_workers: 2                 # 与 dpo/sft configs 一致
+log_interval: 10
+save_interval: 100000          # 只在末尾存一次（save_pretrained 每次写整模型~数GB）
+
+# 训练数据：与 sft_baseline 完全相同的 winners 清单（多目标奖励选出的 winner）
+train_manifest: ./pairs/out/winners_only.jsonl
+
+# 标记为纯 SFT 路线（DpoTrainer.__init__ 据此不加载 ref；走标准 CE+FM+EOS，无配对）
+mode: sft
+# 标准监督损失权重（与 dots.tts 训练一致；加权前的 base loss 就是它）
+loss:
+  ce_weight: 1.0
+  fm_weight: 1.0
+  eos_weight: 1.0
+
+# reward 来源 + 加权方案（X6b：多目标奖励 = run_full_dataprep.sh 的 rewards.jsonl）
+reward_weighting:
+  rewards_file: ./reward/out/rewards.jsonl   # 按 audio 路径 join winners_only；取每候选 reward
+  scheme: exp                                # w=exp(R_z/τ)/E[·]：reward-weighted regression
+  temperature: 1.0                           # τ↑ 趋近 uniform SFT；τ↓ 更贪婪（放大高 reward）
+  normalize: true                            # 解析归一使 E[w]≈1 → 有效学习率与 sft_baseline 可比
+
+dpo:
+  base_ckpt: rednote-hilab/dots.tts-base
+  lora: { enabled: false }                   # 全参；显存紧张时改 lora.enabled=true（仍走本臂逻辑）

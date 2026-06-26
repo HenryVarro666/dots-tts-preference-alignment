@@ -1,0 +1,46 @@
+# reward_weighted_weronly.yaml — X7：reward-weighted 回归臂（**仅 WER** 奖励；非 DPO 对比）
+# 为什么存在: 在「非错配」(非 DPO) 框架内干净复现 reward-hacking。本臂与 reward_weighted.yaml 只差两处:
+#   ① winner 清单换成「按最低 WER 选」的 winners_only_weronly.jsonl；
+#   ② 加权 reward 换成「仅 WER」聚合的 rewards_weronly.jsonl。
+#   其余（步数/LR/损失/scheme/temperature/normalize）全同 → 朝「最低 WER 的 winner」做加权回归。
+# 对实验意义: 解 domain reviewer 的 Contribution-2 vs 4——若连「不做 win/lose 对比」的纯回归臂、只把
+#   reward 设成仅 WER，也会读得清但自然度退化(UTMOS/SIM↓)，就证明 reward-hacking 是**reward 设计本身**
+#   的问题，而非 DPO 错配(§6.7)的伪影。X6b(多目标) vs X7(仅WER) 即「reward 设计」这一变量的对照。
+#
+# 前置: 需先抽 WER-only winners（run_full_dataprep.sh 已产出 pairs_weronly.jsonl，再抽一次 winners）:
+#   python pairs/extract_winners.py --pairs pairs/out/pairs_weronly.jsonl \
+#          --out pairs/out/winners_only_weronly.jsonl
+# 用 alignment/train_reward_weighted.py 跑（与 X6b 同一引擎）。
+
+output_dir: ./alignment/out/reward_weighted_weronly
+
+# --- 训练（与 reward_weighted.yaml 完全一致；两臂只应差在 winner 清单 / reward 来源） ---
+learning_rate: 1.0e-5
+max_train_steps: 1500
+warmup_steps: 50
+gradient_accumulation_steps: 4
+micro_batch_size: 1
+grad_clip_norm: 1.0
+num_workers: 2
+log_interval: 10
+save_interval: 100000
+
+# 训练数据：WER-only 选出的 winner 清单（见上方 extract_winners 命令）
+train_manifest: ./pairs/out/winners_only_weronly.jsonl
+
+mode: sft
+loss:
+  ce_weight: 1.0
+  fm_weight: 1.0
+  eos_weight: 1.0
+
+# reward 来源 + 加权方案（X7：仅 WER 奖励；scheme/temperature/normalize 与 X6b 严格一致）
+reward_weighting:
+  rewards_file: ./reward/out/rewards_weronly.jsonl   # 仅 WER 聚合；按 audio 路径 join
+  scheme: exp
+  temperature: 1.0
+  normalize: true
+
+dpo:
+  base_ckpt: rednote-hilab/dots.tts-base
+  lora: { enabled: false }
