@@ -20,6 +20,10 @@ L_FM(model, x) = E_{t, x0} || v_θ(x_t, t | g_cond) − u_t ||²
 ```
 `L_FM` 越小 → 该样本在模型下「越可能」。于是用 `−L_FM` 当 `log p` 的代理。
 
+> **⚠️ 实证警示（核心发现，必读）**：本方法的隐含前提是「`L_FM`（似然代理）跟 perceptual 质量同向——被偏好候选 `L_FM` 更低」。决定性探针 `alignment/probe_fm_reward.py`（N=24 pair × K=24 MC）**实测推翻了这个前提**：去噪后 **Pearson(FM margin, reward 差) = −0.496**（仅 4/24 pair 的 winner FM 更优、win_rate 0.33、mean margin −0.0215、std 0.0979），即 `L_FM` 与 reward **反相关**——reward 最高的候选恰是模型似然最低的。「`−L_FM` 当 `log p`」对 DPO 因此是**错配**的隐式奖励，这正解释了训练里 `reward_margin→0` 的欠拟合（见 `05` B-15/B-16）。该结论**判定为决定性（decisive）、H3 证实**。
+> **统计显著性（如实标注，n=24 pilot）**：核心主张「winner 不是 FM 偏好候选」**稳健**——仅 4/24 去噪 margin 为正，二项检验 vs p=0.5 得 **p<0.001**；Pearson −0.496 在 n=24 **显著**（临界 |r|≈0.40，p≈0.014）。但 Spearman −0.302 较弱、该 n **不显著**（p≈0.15）——秩相关是**弱环**，相关性精确量级应在全部 **N=188** 对上确认（进行中）。即：**错配方向统计稳健，精确量级待全量复核**。**完整数据/机理/影响见 `docs/06-核心发现-FM损失与奖励错配.md`**。
+> **guidance-confound 已排除（确认内在反相关）**：曾担心反相关是**候选生成 guidance 混淆**（winner 系统性高 guidance）而非 FM 本质——现已用元数据探针 `candidates/inspect_guidance_confound.py`（纯元数据 join pairs↔candidates_index，188 对、0 join 失败）**排除**：winner/loser 的生成设置**统计上无系统差异**——guidance_scale 1.114 vs 1.093（差 +0.021，winner 更高仅 39%、更低 29%、相等 32%）、num_steps 11.85 vs 10.44（差 +1.42，winner 更高 51%）、speaker_scale 1.371 vs 1.339（差 +0.032），且各设置与 reward 差仅**弱相关 |Pearson|≤0.12**（分别 +0.108 / +0.118 / +0.108）。故 guidance 混淆**排除**，FM-reward 反相关是 flow-matching 损失的**内在错配（intrinsic misspecification）**，非候选生成产物。下文 §3 的 DPO-FM 目标据此从「待验证的工作假设」**收紧为已确认的内在错配**。注：§5 的 **open-SOAR 与 anchor SFT 均不把 `L_FM` 当 logprob**（SFT 是 winners 上的 CE+EOS、open-SOAR 是 reward-free 自校正），故**不受此错配影响**。
+
 ## 3. DPO over flow-matching（本项目的目标）
 
 定义策略相对参考对某样本的「似然提升」：
