@@ -9,7 +9,7 @@
 
 ## 0. TL;DR（一句话裁决）
 
-在 dots.tts 上，**5 臂里只有 `open_soar` 改善（UTMOS 4.408 五臂最佳、WER≈base、SIM 略降）**；**`sft`、`dpo_multiobj`、`dpo_weronly` 全部退化或崩坏**——其中 `dpo_multiobj` **灾难崩坏 + 25% 生成发散**，`sft` **意外崩坏**（推翻审稿钦点的「安全对照」），`dpo_weronly` 大致守住但未取得最低 WER（**RQ3 reward-hacking 未复现**）。崩坏按「往 automatic-reward 选出的**自生成 off-manifold winner** 拉多狠」**单调加剧**，导出新论点：**off-manifold self-training 退化，与训练目标（SFT/DPO）无关**；唯训向真实/似然对齐目标（`open_soar`）有效。
+在 dots.tts 上，**5 臂里只有 `open_soar` 改善（UTMOS 4.408 五臂最佳、WER≈base、SIM 略降）**；**`sft`、`dpo_multiobj`、`dpo_weronly` 全部退化或崩坏**——其中 `dpo_multiobj` **灾难崩坏 + 25% 生成时崩**（immediate-EOS），`sft` **意外崩坏**（推翻审稿钦点的「安全对照」），`dpo_weronly` 大致守住但未取得最低 WER（**RQ3 reward-hacking 未复现**）。崩坏按「往 automatic-reward 选出的**自生成 off-manifold winner** 拉多狠」**单调加剧**，导出新论点：**off-manifold self-training 退化，与训练目标（SFT/DPO）无关**；唯训向真实/似然对齐目标（`open_soar`）有效。
 
 ---
 
@@ -25,28 +25,38 @@
 | **dpo_multiobj** | **0.752 [0.566, 1.035]** | **0.365 [0.280, 0.460]** | **2.841 [2.583, 3.105]** | **75** | **25%** (25/100) | — (空) | **灾难崩坏 + 25% 失败** |
 | **dpo_weronly** | 0.115 [0.087, 0.145] | 0.852 [0.836, 0.868] | 4.112 [4.050, 4.172] | 100 | **0%** (0/100) | — (空) | 大致守住 |
 
-> **关键并列标注（不可省）**：新增的**生成失败率列**让 active degradation 不被 WER 漏判——**崩坏臂的失败样本不进 WER**（生成失败的句子无可转写文本，被排除出 WER 统计），**单看 WER 会低估 active degradation**。**唯 `dpo_multiobj` 生成失败率非零（25/100 = 25%，全部 immediate-EOS，见 §2）**，其余四臂**均 0%（0/100）**。这区分了两种崩坏：`sft` 是 **graded WER 退化**（仍正常出音频、0% 生成失败，只是质量崩）；`dpo_multiobj` 是 **graded 退化 + 25% 生成发散**（直接发 EOS、无音频载荷）。因此 `dpo_multiobj` 主表 **n = 75**，WER 0.752 **只统计成功的 75 条**（失败的更差）——**失败率（25%）必须与 WER 0.752 并列**报告，否则**低估崩坏**（caveat 5）。
+> **关键并列标注（不可省）**：新增的**生成失败率列**让 active degradation 不被 WER 漏判——**崩坏臂的失败样本不进 WER**（生成失败的句子无可转写文本，被排除出 WER 统计），**单看 WER 会低估 active degradation**。**唯 `dpo_multiobj` 生成失败率非零（25/100 = 25%，全部 immediate-EOS，见 §2）**，其余四臂**均 0%（0/100）**。这区分了两种崩坏：`sft` 是 **graded WER 退化**（仍正常出音频、0% 生成失败，只是质量崩）；`dpo_multiobj` 是 **graded 退化 + 25% 生成时崩**（直接发 EOS、无音频载荷；该 25% 究属 graded 退化还是 optimization divergence，**证据不一、暂不定论**，见 §2 / caveat 2）。因此 `dpo_multiobj` 主表 **n = 75**，WER 0.752 **只统计成功的 75 条**（失败的更差）——**失败率（25%）必须与 WER 0.752 并列**报告，否则**低估崩坏**（caveat 5）。
 
 **逐列读法**：
 - **base → open_soar**：UTMOS **4.309 → 4.408**（升、五臂最佳）、WER **0.103 → 0.093**（≈持平、略降）、SIM **0.891 → 0.844**（略降）。**唯一净改善臂**。
 - **base → dpo_weronly**：WER **0.103 → 0.115**（≈base，**非最低**）、UTMOS **4.309 → 4.112**（略降）、SIM 0.852（守住）。**大致守住但 WER-only 没 hack 成**（RQ3，见 §5）。
 - **base → sft**：WER **0.103 → 0.545**（5× 恶化）、SIM **0.891 → 0.673**、UTMOS 4.309 → 3.917。**崩坏**（反转，见 §3）。
-- **base → dpo_multiobj**：WER **0.103 → 0.752**、SIM **0.891 → 0.365**、UTMOS **4.309 → 2.841**，外加 **25% 发散**。**灾难崩坏**。
+- **base → dpo_multiobj**：WER **0.103 → 0.752**、SIM **0.891 → 0.365**、UTMOS **4.309 → 2.841**，外加 **25% 生成时崩**（immediate-EOS）。**灾难崩坏**。
 
 ---
 
-## 2. `dpo_multiobj` 失败清单摘要（25/100，全 LJ002）
+## 2. `dpo_multiobj` 失败清单摘要（25/100，聚于 LJ002 子集）
 
 | 项 | 值 |
 |---|---|
 | 生成失败数 | **25 / 100 = 25%** |
 | 失败模式 | **全部 immediate-EOS / no-payload**（一开生成即 EOS、无音频载荷） |
-| 失败分布 | **全集中在 `LJ002-xxxx` 块**（非均匀散布） |
+| 失败分布 | 聚于 `LJ002` 子集，但**须诚实归因**：评测集（`eval_big` 取前 100 held-out）**本身 89% 为 LJ002**（89/100），故「聚于 LJ002」**部分因 LJ002 占评测主体**；组内率 **LJ001 0/11（0%）vs LJ002 25/89（28%）**（小 n、p≈0.02）仍是真实的 prompt 依赖，**非均匀** |
+| prompt 长度 | 失败样本平均 text 长 **105** vs 全体 **94**（**1.12×、仅轻微偏长**）——**不足以判定「长 prompt 触发」** |
+| 位置偏置 | 失败样本落后段 **52%**，**无明显位置偏置** |
 | 对主表的影响 | `dpo_multiobj` 主表 **n=75**（仅成功句）；WER 0.752 是成功子集的值，**失败句更差** |
 
-**判读**：25% 的 immediate-EOS 不是「graded 退化」，而是 **optimization divergence**——策略被反向梯度推到「直接发 EOS」的退化吸引子。这与 graded（Spearman −0.187 的弱单调）**不同质**（caveat 2）。**失败全落在 `LJ002` 块**这一聚集（与 `sft` 崩坏块一致，见 §3）强烈提示：崩坏与 **prompt 长度 / 内容 / 评测集排序**绑定，**非均匀崩坏**，须专项排查（caveat 3、§7 下一步）。
+**判读（保守诚实 · graded-vs-divergence 证据不一）**：25% 的 immediate-EOS 是**在某 prompt 子集上的生成时崩**（generation-time collapse on a prompt subset）；它与 graded（Spearman −0.187 的弱单调）**不同质**，但**「graded 退化 vs optimization divergence」的证据相互不一致，暂不下定论**——
 
-> **对照（生成失败率列）**：`dpo_multiobj` 是**唯一**生成失败率非零的臂（25%）；**其余四臂（base / sft / open_soar / dpo_weronly）生成失败率均为 0%（0/100）**。注意崩坏臂 `sft` 虽 WER 崩到 0.545，但**生成失败率仍 0%**——它是 graded 质量退化（句句出音频），与 `dpo_multiobj` 的「质量退化 + 生成发散」**双重崩坏**有别。故 Table 1 的失败率列与 WER 列**必须并看**：单看 WER 会把 `dpo_multiobj` 的 active degradation 低估（失败的 25 条根本不进 WER）。
+> - **训练曲线偏「未发散」**：X2/X3 实测，`dpo_multiobj` 训练 `fm_w` **全程稳定 ~0.74**（末段 / 早段比 **1.01×**、**未二次爆**、reward-margin 仍小 **0.065**）→ **训练阶段并未发散**（区别于 run0 式早期 over-optimization 的训练时爆炸）。
+> - **交叉表偏「divergence」**：按 |reward-gap| 分层，大-gap 对的 FM 与 reward **更脱钩**（同向率 **34%** vs 小-gap **48%**）→ 偏 divergence。
+> - **合判**：训练指标温和、却在 **LJ002 子集** 生成时崩（25% immediate-EOS）→ **不是 run0 式训练时发散**，而是**「训练温和但模型已 off-manifold 漂移 → 部分 prompt 生成时崩」**。
+
+故**保守报告为「生成时子集崩」**，是否纯属 optimization divergence **待人工 TB-curve 复核 + 失败句听测裁决**（§7 下一步 2），不径直坐实。这一图景**强化 off-manifold 论点**：错向梯度**不靠炸训练指标**（`fm_w` 未再爆、margin 仍小），而是**悄悄把模型推离流形** → 在 LJ002 这类 prompt 上生成时崩。
+
+**LJ002 聚集须诚实归因**（见 §2 表 / caveat 3，勿写成「长 prompt 触发」）：评测集 **89% 为 LJ002**（89/100，`eval_big` 取前 100 held-out）、组内 **LJ001 0/11（0%）vs LJ002 25/89（28%）**（小 n、p≈0.02 的真实 prompt 依赖）、失败样本仅**轻微偏长（text 105 vs 94 = 1.12×）**、**无位置偏置（后段 52%）**——聚集**部分因 LJ002 占评测主体**，但组内 0% vs 28% 仍为真实非均匀。须专项排查（caveat 3、§7 下一步）。
+
+> **对照（生成失败率列）**：`dpo_multiobj` 是**唯一**生成失败率非零的臂（25%）；**其余四臂（base / sft / open_soar / dpo_weronly）生成失败率均为 0%（0/100）**。注意崩坏臂 `sft` 虽 WER 崩到 0.545，但**生成失败率仍 0%**——它是 graded 质量退化（句句出音频），与 `dpo_multiobj` 的「质量退化 + 25% 生成时崩」**双重崩坏**有别。故 Table 1 的失败率列与 WER 列**必须并看**：单看 WER 会把 `dpo_multiobj` 的 active degradation 低估（失败的 25 条根本不进 WER）。
 
 ---
 
@@ -59,7 +69,7 @@
 | ① | **真实 clean 音频**（非 reward-winner） | `open_soar` | clean-vs-perturbed，**似然对齐** | 0.093 | **4.408** | **改善** |
 | ② | reward-winner（弱、WER-only、63% 平局） | `dpo_weronly` | 弱拉 | 0.115 | 4.112 | **≈base** |
 | ③ | reward-winner（强监督，直接 FM） | `sft` | **强拉** | 0.545 | 3.917 | **崩** |
-| ④ | 最干净 reward-winner（DPO 强拉 + 反向梯度） | `dpo_multiobj` | **最强拉** | 0.752 | 2.841 | **灾难 + 25% 发散** |
+| ④ | 最干净 reward-winner（DPO 强拉 + 反向梯度） | `dpo_multiobj` | **最强拉** | 0.752 | 2.841 | **灾难 + 25% 生成时崩** |
 
 **反转（本表最重要的发现）**：
 - n=3 冒烟里 `sft` 看着**最好**（WER 0.039），全量 n=100 **崩坏**（WER 0.545）。
@@ -84,7 +94,7 @@
 > **裁决：是（active degradation 证实）。**
 > 依据：`dpo_multiobj` WER CI **[0.566, 1.035]** 与 base **[0.071, 0.142]** **不重叠**，且叠加 **25% 生成失败**（immediate-EOS/no-payload）。→ PAPER §6.7 的「active degradation」预测**证实**。
 
-> ⚠️ **但含发散成分（caveat 2）**：25% 失败是 immediate-EOS / optimization **divergence**，与 graded（Spearman −0.187 的弱单调）**不同质**——崩坏量级**超出**弱单调相关所能预测的范围，更像**反相关梯度驱动的 over-optimization 发散**（DA 早疑）。故 active-degradation 成立，但**不可纯归因 graded 反相关**，须如实区分 **graded degradation vs optimization divergence**。
+> ⚠️ **但含「生成时崩」成分（caveat 2）**：25% 失败是 immediate-EOS / no-payload 的**生成时子集崩**，与 graded（Spearman −0.187 的弱单调）**不同质**——崩坏量级**超出**弱单调相关所能预测的范围。但**「graded vs optimization divergence」证据不一**：X2/X3 训练曲线 `fm_w` **全程稳 ~0.74、未二次爆、margin 仍小 0.065 → 训练未发散**（非 run0 式训练时爆炸）；交叉表大-gap 对 FM-reward 更脱钩（同向率 **34%** vs 小-gap **48%**）**→ 偏 divergence**；**合判为「训练温和但模型已 off-manifold 漂移 → 部分 prompt 生成时崩」**。故 active-degradation 成立，但**既不可纯归因 graded 反相关、亦不可径直断言 optimization divergence**，须**保守如实**，待人工 TB-curve 复核 + 失败句听测裁决。
 
 ---
 
@@ -105,8 +115,8 @@
 ## 6. 全部 caveat（5 条，务必如实，须写进 PAPER §5/§6/§7）
 
 1. **`sft` 崩坏与「小数据 SFT 过拟合 / 灾难性遗忘」混淆**：188 单说话人 SFT 本就易过拟合 / 遗忘；干净判别需 **SFT-on-random-candidates vs SFT-on-reward-winners** 对照（future work）。`open_soar`（**同规模微调、同优化器族**）不崩是**部分对照**，指向「**目标分布（off-manifold winner）**」而非单纯「SFT 不稳」——但**未完全排除**，§3.1 新论点仍是强假设。
-2. **`dpo_multiobj` 的 25% 失败是 immediate-EOS / 发散**，与 graded（Spearman −0.187）**不同质**——更像反相关梯度驱动的 **over-optimization 发散**；崩坏量级超出弱单调相关的预测，须如实区分 **graded degradation vs optimization divergence**。
-3. **失败全集中在 `LJ002` 块**（`sft`、`dpo_multiobj` 皆然）→ 疑与 **prompt 长度 / 内容 / 评测集排序**有关，**须查**，**非均匀崩坏**；这也是 n=3 冒烟（全 `LJ001`）漏掉崩坏的直接原因。
+2. **`dpo_multiobj` 的 25% 失败是 immediate-EOS / no-payload 的「生成时子集崩」**，与 graded（Spearman −0.187）**不同质**；崩坏量级超出弱单调相关的预测。但**「graded vs optimization divergence」证据不一**：X2/X3 训练曲线 `fm_w` 全程稳 ~0.74、**未二次爆**、margin 仍小 0.065 → **训练未发散**（非 run0 式训练时爆炸）；交叉表大-gap 对 FM-reward 更脱钩（34% vs 48%）→ **偏 divergence**。**合判 = 训练温和但模型已 off-manifold 漂移 → 部分 prompt 生成时崩**；**保守报告，不径直断言 optimization divergence**，待人工 TB-curve + 失败句听测裁决。这**强化 off-manifold 论点**：错向梯度不靠炸训练指标（`fm_w` 未再爆、margin 仍小）、而是悄悄把模型推离流形。
+3. **失败聚于 `LJ002` 子集**（`sft`、`dpo_multiobj` 皆然）须**诚实归因**：评测集（`eval_big` 取前 100 held-out）**本身 89% 为 LJ002**（89/100），故聚集**部分因 LJ002 占评测主体**；但组内 **LJ001 0/11（0%）vs LJ002 25/89（28%）**（小 n、p≈0.02）仍是真实 prompt 依赖，失败样本仅**轻微偏长（text 105 vs 94 = 1.12×）、无位置偏置（后段 52%）**——**不写成「长 prompt 触发」**。仍**须专项排查**（prompt 内容 / 评测集排序 / fid 块边界）；这也是 n=3 冒烟（全 `LJ001`）漏掉崩坏的直接原因。
 4. **崩坏臂 CI 极大**（`sft` WER **[0.25, 1.06]**、`dpo_multiobj` WER **[0.57, 1.04]**、UTMOS **[2.58, 3.11]**）、**单说话人 LJSpeech**、**无人类听测（ABX/MOS）**——量级**仅供方向**，不可当精确效应。
 5. **`dpo_multiobj` 主表 WER 0.752 只统计成功的 75 条**（失败的更差），故**失败率（25%）必须与 WER 0.752 并列**报告，否则**低估崩坏**。
 
@@ -115,7 +125,7 @@
 ## 7. 下一步（future work）
 
 1. **SFT-random 对照**（裁决 §3.1 新论点 / caveat 1）：跑 **SFT-on-random-candidates vs SFT-on-reward-winners** —— 若 random 不崩、reward-winner 崩，则「off-manifold 目标」为因，新论点坐实；若两者都崩，则混入「小数据 SFT 不稳」，须降级表述。
-2. **`dpo_multiobj` 发散诊断**：定位 25% immediate-EOS 的触发——训练曲线 EOS-loss / reward-margin 轨迹、是否 over-optimization 吸引子；区分 graded degradation vs optimization divergence（caveat 2）。
+2. **`dpo_multiobj` 生成时崩诊断（X2/X3 已部分回填）**：训练曲线已查——`fm_w` 全程稳 ~0.74、**未二次爆**、reward-margin 仍小 0.065 → **训练未发散**；交叉表大-gap 对 FM-reward 更脱钩（34% vs 48%）→ 偏 divergence；**合判 = 训练温和但 off-manifold 漂移 → LJ002 子集生成时崩**。**待补**：人工 TB-curve 复核 + 失败句听测裁决，最终落定 **graded degradation vs optimization divergence**（caveat 2），不径直坐实。
 3. **`LJ002` 聚集排查**（caveat 3）：核对失败句的 **prompt 长度 / 内容 / 评测集排序 / fid 块边界**，判定崩坏是否与某结构性因素绑定，而非均匀；据此决定是否需重排评测集 / 扩 n。
 4. ~~**`probe_analysis.py` 偏相关**（intrinsic 裁决）~~ **✓ 已完成（见 §8）**：`corr(FM-margin, reward-gap | guidance, num_steps, speaker_scale)` = **partial −0.392、CI[−0.548,−0.209]、显著**，控住全部生成 knob 仍存活 → **裁决：intrinsic（反相关非 grid effect）**；num_steps r=−0.237 是温和混淆但被偏相关控住。**C6 守住**：intrinsic ≠ intrinsic-to-`L_FM`，诊断仍 preference-likelihood/off-manifold。
 5. **人类听测（ABX/MOS，≥15–20 听者）**：崩坏臂的量级与 UTMOS 退化须由人耳锚定；未做前**不称** perceptual / naturalness 退化（[`07`](07-审稿意见-第一轮.md) P2）。
