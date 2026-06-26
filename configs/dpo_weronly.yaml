@@ -17,8 +17,8 @@ save_interval: 100000  # 只在末尾存一次（save_pretrained 每次写整模
 
 dpo:
   base_ckpt: rednote-hilab/dots.tts-base
-  beta: 0.2                       # 0.1→0.2 收紧漂移
-  lambda_sft: 0.5             # 0.1→0.5 强化 FM 声学 anchor（防全局漂移）
+  beta: 0.3                       # 中间档：0.2→0.3 放大 DPO 信号
+  lambda_sft: 0.2             # 中间档：0.5→0.2 让 DPO 有空间拉开 margin（仍防爆）
   # 用「仅 WER」聚合的偏好对（run_full_dataprep.sh 会产出这个文件）
   pairs_file: ./pairs/out/pairs_weronly.jsonl
   reward_weights: { wer: 1.0, sim: 0.0, utmos: 0.0 }
