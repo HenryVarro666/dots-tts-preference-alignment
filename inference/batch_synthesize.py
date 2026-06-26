@@ -14,6 +14,7 @@ batch_synthesize.py — 阶段⑥a：离线批量合成（评测前置）
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
@@ -40,21 +41,42 @@ def main() -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
     runtime = DotsTtsRuntime.from_pretrained(args.ckpt)
 
-    n = 0
+    n_ok = 0
+    failures: list[dict] = []
     for r in read_jsonl(args.manifest):
-        res = runtime.generate(
-            text=r["text"], prompt_audio_path=r["prompt_audio"], prompt_text=r.get("prompt_text", ""),
-            language=r.get("lang"), num_steps=args.num_steps,
-            guidance_scale=args.guidance_scale, speaker_scale=args.speaker_scale, normalize_text=True,
-        )
-        audio = res["audio"]
+        fid = str(r["fid"])
+        # 单条生成失败（如崩坏臂 dpo_multiobj 对某些 prompt 立即 EOS、产不出 latent）
+        # 不应中断整批：捕获、记录、继续。**失败率本身是结果**——量化该臂的生成崩坏程度，
+        # 直接回应审稿人（DA/EIC）要的"active degradation"证据。
         try:
-            audio = audio.float().cpu().squeeze().numpy()
-        except AttributeError:
-            pass
-        sf.write(str(out_dir / f"{r['fid']}.wav"), audio, int(res["sample_rate"]))
-        n += 1
-    print(f"✓ [{args.treatment}] 离线合成 {n} 条 (NFE={args.num_steps}) -> {out_dir}")
+            res = runtime.generate(
+                text=r["text"], prompt_audio_path=r["prompt_audio"], prompt_text=r.get("prompt_text", ""),
+                language=r.get("lang"), num_steps=args.num_steps,
+                guidance_scale=args.guidance_scale, speaker_scale=args.speaker_scale, normalize_text=True,
+            )
+            audio = res["audio"]
+            try:
+                audio = audio.float().cpu().squeeze().numpy()
+            except AttributeError:
+                pass
+            sf.write(str(out_dir / f"{fid}.wav"), audio, int(res["sample_rate"]))
+            n_ok += 1
+        except Exception as e:  # noqa: BLE001 — 故意宽捕获：任何单条生成异常都不该让整批/整个 run_matrix 崩
+            failures.append({"fid": fid, "error": f"{type(e).__name__}: {e}"})
+            print(f"  ✗ [{args.treatment}] {fid} 生成失败（计入失败率，不写 wav）: {type(e).__name__}: {e}",
+                  file=sys.stderr)
+
+    n_total = n_ok + len(failures)
+    report = {
+        "treatment": args.treatment, "num_steps": args.num_steps,
+        "n_total": n_total, "n_ok": n_ok, "n_failed": len(failures),
+        "failure_rate": round(len(failures) / max(n_total, 1), 4),
+        "failures": failures,  # 逐条 fid+错误，供溯源（崩坏臂会在这里堆很多）
+    }
+    (out_dir / "_synthesis_report.json").write_text(
+        json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+    print(f"✓ [{args.treatment}] 合成成功 {n_ok} / 失败 {len(failures)} "
+          f"(失败率 {report['failure_rate']:.1%}, NFE={args.num_steps}) -> {out_dir}")
 
 
 if __name__ == "__main__":
