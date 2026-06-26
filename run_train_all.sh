@@ -33,16 +33,34 @@ declare -A SCRIPT=(
   [dpo_weronly]="alignment/train_dots_tts_dpo.py"
   [open_soar]="alignment/train_open_soar.py"
   [sft]="alignment/train_sft.py"
+  # 第二轮 X4 SFT-target 梯度对照（都走 train_sft.py，只换 config/数据）
+  [sft_losers]="alignment/train_sft.py"
+  [sft_random]="alignment/train_sft.py"
+  [sft_groundtruth]="alignment/train_sft.py"
+  # 第二轮 X6/X7 建设性臂
+  [dpo_onmanifold]="alignment/train_dots_tts_dpo.py"
+  [reward_weighted]="alignment/train_reward_weighted.py"
+  [reward_weighted_weronly]="alignment/train_reward_weighted.py"
 )
 declare -A CFG=(
   [dpo_multiobj]="configs/dpo_multiobj_fullparam.yaml"
   [dpo_weronly]="configs/dpo_weronly.yaml"
   [open_soar]="configs/open_soar_selfcorrect.yaml"
   [sft]="configs/sft_baseline.yaml"
+  [sft_losers]="configs/sft_losers.yaml"
+  [sft_random]="configs/sft_random.yaml"
+  [sft_groundtruth]="configs/sft_groundtruth.yaml"
+  [dpo_onmanifold]="configs/dpo_onmanifold.yaml"
+  [reward_weighted]="configs/reward_weighted.yaml"
+  [reward_weighted_weronly]="configs/reward_weighted_weronly.yaml"
 )
 
 # winners 清单(SFT 需要; 幂等)
 python pairs/extract_winners.py || true
+# 第二轮 SFT-target 对照臂所需清单(幂等; 仅在请求对应臂时抽)
+#   sft_groundtruth 用真实音频清单 data/prompts/dots_manifest_train.jsonl，无需抽取。
+if [[ " ${TREATS[*]} " == *" sft_losers "* ]]; then python pairs/extract_losers.py || true; fi
+if [[ " ${TREATS[*]} " == *" sft_random "* ]]; then python pairs/extract_random.py || true; fi
 
 for t in "${TREATS[@]}"; do
   echo "[$(date +%H:%M:%S)] ====== 训练 ${t} ======"
