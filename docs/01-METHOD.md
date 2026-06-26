@@ -61,6 +61,16 @@ dots.tts 的 SOAR 训练程序未开源（仓库只有 soar 权重；`../../参�
 它**不用任何外部奖励**，因此与多目标 DPO 对照即可分离「自校正」与「外部偏好」的贡献（RQ4）。
 > 明确标注：这是**开源再现/近似**，非 Boson 原始 SOAR；命名 open-SOAR 以示区别。
 
+## 5.5 建设性出路：likelihood-based DPO 是错的工具时怎么办（reward-weighted / on-manifold winner / 非似然目标）
+
+§2 的实证警示与 ADR-10 确立：在 dots.tts 上，当 automatic-metric reward 偏好呈 **off-manifold** 属性时，把 `−L_FM` 当 logprob 的 likelihood-based DPO **指错方向**（preference-likelihood 对齐失败；intrinsic 确立，偏相关 partial −0.392）。但**失败的是「拿似然对比去逼近 reward 偏好」这一耦合，不是「似然代理 `L_FM` 无效」**——open-SOAR 用同一 `L_FM`、似然对齐的偏好训得满分即证据。因此建设性出路是把二者**解耦**，三条互补路径（第二轮 P2 实证，见 ADR-11 / `04` 风险⑬；脚手架已建、结果待 GPU 跑出，**非已验证配方**）：
+
+1. **on-manifold winner（修偏好侧、保 DPO 框架）**——`pairs/filter_pairs_by_likelihood.py` 只保留「reward 偏好与模型 flow 似然**同向**」的 pair（`dpo_onmanifold`），把 off-manifold winner 从训练对里剔除，让 DPO-FM 只在「reward 高 ∧ 似然不低」的子集上学，从源头不踩对齐坑。代价是可用 pair 变少（数据上限，cf. B-16）。
+2. **reward-weighted regression（换目标侧、弃似然对比）**——`alignment/train_reward_weighted.py` 在 winners 上做 **reward-加权的监督 FM 回归**（非 win/lose 似然对比），把「相对偏好」换成「按 reward 加权地拉向高质量音频」。它结构上与 `sft` 同族（只拉、不比），不依赖「`L_FM` 当 logprob 且偏好须顺似然」，故**不踩** preference-likelihood 对齐坑（权重函数选择见 `04` 风险⑬；同时用于在非错配框架内干净复现 reward-hacking，RQ3）。
+3. **非似然目标（更彻底）**——绕开「`L_FM` 作隐式奖励」：经**可微 vocoder** 直接对 automatic-metric reward 反传、或用**学习式 value/preference 头**取代「`L_FM` 当 logprob」，让优化目标直接对齐 perceptual reward 而非 flow 似然几何。
+
+三者与 open-SOAR（reward-free、偏好在「轨迹洁净度」、与似然同向）共同构成「**不依赖似然-偏好对齐**」的建设性集合。其中 on-manifold winner 与 reward-weighted 已在第二轮排期（X6a/X6b/X7），结果待出（本机仅 `py_compile`）；held-out 增益以 Table 1（planned）为准，本节为方向而非定论。
+
 ## 6. 与离散派 DPO 的关系
 离散 codec-LM（VALL-E 等）可直接用 token log-prob 做 DPO；连续派一直缺这一步。本方法把离散派成熟的偏好对齐工具链**迁移到连续-latent AR**，正是 `05` §6.2 点名的方向。
 

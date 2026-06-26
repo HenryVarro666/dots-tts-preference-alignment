@@ -48,6 +48,31 @@
 - **缓解**：门控后专门测「对齐增益保留比例」；先 INT8 再尝试 INT4。
 - **触发信号**：蒸馏/量化后 hard-WER 增益归零。
 
+## 风险⑩ VoxCPM 探针 8 处〔需核实〕接缝（X10，架构级结论的命门）
+- **为什么要紧**：`alignment/voxcpm_preprocess.py` + `probe_fm_reward_voxcpm.py` 把 dots.tts 的反相关探针移植到 **VoxCPM**（tokenizer-free continuous diffusion-AR、手写 MiniCPM-4 backbone + 自有 AudioVAE，16k 入/48k 出，见 `06`）。两者的 diffusion/FM 损失项命名、latent 取法、`(x0,t)` 共享接口、x-vector/说话人条件、AudioVAE encode 与 dots.tts **不同**；**8 处接缝**任一移植错，探针测的就不是「同一个量」，VoxCPM 反相关结论（X10 的架构级证据）即失效——这是把「可能架构特定」升为架构级证据的命门。
+- **缓解**：8 处全标〔需核实〕，逐处对照 VoxCPM 源码（`06` 已记 100% first-party、45 文件）核 API；移植后先在 VoxCPM 上做 `check_fm_loss` 等价自检（同 RNG 决定论 + 不同 RNG 有差异 + L_FM 有限值），**通过才跑探针**；VoxCPM 探针须复刻 dots.tts 协议——win/lose 共享同一 `(x0,t)`、K-MC、`no_grad`。
+- **触发信号**：VoxCPM `L_FM` 量级与其训练日志不在一个量级；同 RNG 不决定论；VoxCPM 探针相关性与 dots.tts 差异巨大**且无机理解释**（先怀疑接缝错，而非真架构差异）。
+
+## 风险⑪ 多语种 ZH 须用 CER（非 word-WER）+ 采样率（X11）
+- **为什么要紧**：AISHELL-3 是中文——中文按词切分无意义，**WER 必须用 CER（字错率）**，沿用英文 word-level WER 会得到系统性错误指标。且 AISHELL-3 **44.1 kHz**、VCTK 默认 FLAC，与 dots.tts **48k 契约**不符，静默重采样会劣化（与风险⑥同源，此处针对多语种臂再强调一次）。
+- **缓解**：ZH 评测在 `eval/score_synth.py`/`reward/score_wer.py` 走 **CER 分支**（中文 normalize + char-level）；AISHELL-3 重采样到 **48k**；`data/run_multilingual.md` 逐语种记录 metric（EN=WER / ZH=CER）与采样率约定。
+- **触发信号**：ZH WER 异常高（实为 word-split artifact）；中英指标混排不可比；AudioVAE 编码报采样率/形状错。
+
+## 风险⑫ 流式 Table 2 的 DoubleStreaming 版本兼容（X8）
+- **为什么要紧**：X8 去掉 `--skip-streaming` 跑流式 Table 2，走 `DotsTtsRuntimeDoubleStreaming.start_double_streaming`（B-12 已按官方 example 对齐 API）。但流式 API 是 **dots.tts 版本敏感**的——服务器上 dots.tts 版本若与 B-12 对齐时不同，`start_double_streaming` 的类名/签名/参数可能漂移；且流式克隆**仅 x-vector**（风险④，无 prompt_text）。
+- **缓解**：跑前对照**当前** dots.tts 版本的 `scripts/example_double_streaming.py` 核 API；流式 SIM 只比「流式 vs 流式」的 treatment 差（风险④）；版本/签名不符 **fail-fast**，别让它跑出静默错误的 Table 2。
+- **触发信号**：`start_double_streaming` 报 `TypeError`/`AttributeError`；流式输出与离线量级差异异常、或流式 SIM 直接拿去和离线比下结论（错误）。
+
+## 风险⑬ reward_weighted 的权重函数选择（X6b/X7，决定建设性臂与 RQ3 复现成败）
+- **为什么要紧**：`alignment/train_reward_weighted.py` + `data_pairs.build_weighted_dataloader` 在 winners 上做 reward-加权回归（非似然目标）；**权重函数**（线性 reward / `exp(reward/τ)` / rank-based / 截断）直接决定它是「温和偏好」还是「激进 reward-hacking」。X7（`reward_weighted_weronly`）要在**非错配框架内干净复现 reward-hacking**（RQ3）——权重选太软 hack 不出来、选太硬训练发散，两端都让 RQ3 复现失败或不可解读。
+- **缓解**：权重函数与温度 `τ` 作**显式可配项**，先小规模扫几档；`reward_weighted`（多目标，建设性出路）与 `reward_weighted_weronly`（仅 WER，reward-hacking 复现）**共用同一权重函数**以保证可比；记录所选函数 + provenance。
+- **触发信号**：reward_weighted 训练发散 / loss NaN；reward-hacking 复现不出 **graded** 退化（WER 降但 SIM/UTMOS 单调崩）。
+
+## 风险⑭ settings-matched 候选需重生成（X5，非复用第一轮候选）
+- **为什么要紧**：`generate_candidates.py --fixed-setting`（默认锁 `num_steps=10`/`guidance=1.2`/`speaker_scale=1.5`）产出的是**一批全新候选**（不是复用第一轮 `candidates_index.jsonl`），须重跑候选生成 + reward 打分 + 配对（~GPU 时间成本）。且 fixed-setting 若选在多样性低的角落（如固定低 guidance），候选多样性可能塌（风险①），探针无信号。
+- **缓解**：fixed-setting 取第一轮候选池的**中位 knob**（让差异来自随机性而非 knob 网格）；重生成后先抽查候选池 **reward 方差**（风险①触发信号）再跑探针；settings-matched 探针与 `probe_analysis.py` 偏相关**互为印证、不互相替代**。
+- **触发信号**：固定 setting 后候选池平均 reward 方差接近 0（风险①）；settings-matched 下 high-gap pair 配不出（多为 near-tie），探针 N 不足。
+
 ## 决策点（需用户拍板的，已在 PROTOCOL/configs 给默认）
 - full-param(H100) vs LoRA(A6000)：默认按卡选。
 - 数据规模/语言优先（默认 LJSpeech 打通 → VCTK(EN) + AISHELL-3(ZH)）。
