@@ -1,0 +1,30 @@
+# sft_vctk.yaml — VCTK(EN, 多说话人) 上的控制变量臂：仅用 winners 继续 SFT（CE+FM+EOS）
+# 仿 sft_baseline.yaml，仅改 output_dir + train_manifest 指向 VCTK 语料产物（管线代码不动）。
+# 为什么: 排除「DPO 的增益其实只是多看了好数据」这一替代解释——在多说话人语料上同样要这条控制线。
+# 对实验意义: 若 dpo_multiobj_vctk 显著优于 sft_vctk，才说明是「偏好对齐」而非「数据增量」在起作用。
+
+output_dir: ./alignment/out/sft_vctk
+
+learning_rate: 1.0e-5
+max_train_steps: 1500
+warmup_steps: 50
+gradient_accumulation_steps: 4
+micro_batch_size: 1
+grad_clip_norm: 1.0
+num_workers: 2                # 与 dpo configs 一致
+log_interval: 10
+save_interval: 100000  # 只在末尾存一次（save_pretrained 每次写整模型~数GB）
+
+# winners 训练数据（VCTK 专属；run_multilingual.md 用 extract_winners --out 产出）
+train_manifest: ./pairs/out/winners_only_vctk.jsonl
+
+# 标记为纯 SFT（用 alignment/train_sft.py 跑；走 dots.tts 标准 CE+FM+EOS，无 ref/无配对）
+mode: sft
+# 标准监督损失权重（与 dots.tts 训练一致）
+loss:
+  ce_weight: 1.0
+  fm_weight: 1.0
+  eos_weight: 1.0
+dpo:
+  base_ckpt: rednote-hilab/dots.tts-base
+  lora: { enabled: false }
