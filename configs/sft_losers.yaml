@@ -1,0 +1,30 @@
+# sft_losers.yaml — SFT-target 梯度对照臂 X4：仅用 losers 继续 SFT（CE+FM+EOS）
+# 为什么: 与 sft_baseline(winners) 训练管线/步数/损失/数据量全同，唯一变量是 target 的奖励轴位置(worst vs best)。
+# 对实验意义: losers 仍是 dots.tts 自采样、留在生成流形上；若 winners 崩得比 losers 惨，
+#            才能把退化归因于「目标 off-manifold」而非「小数据 SFT 本身不稳」。
+
+output_dir: ./alignment/out/sft_losers
+
+learning_rate: 1.0e-5
+max_train_steps: 1500
+warmup_steps: 50
+gradient_accumulation_steps: 4
+micro_batch_size: 1
+grad_clip_norm: 1.0
+num_workers: 2                # 与 dpo configs 一致
+log_interval: 10
+save_interval: 100000  # 只在末尾存一次（save_pretrained 每次写整模型~数GB）
+
+# losers 训练数据（pairs/extract_losers.py 产出；schema 同 winners_only：{fid,text,audio,lang}）
+train_manifest: ./pairs/out/losers_only.jsonl
+
+# 标记为纯 SFT（用 alignment/train_sft.py 跑；走 dots.tts 标准 CE+FM+EOS，无 ref/无配对）
+mode: sft
+# 标准监督损失权重（与 dots.tts 训练一致）
+loss:
+  ce_weight: 1.0
+  fm_weight: 1.0
+  eos_weight: 1.0
+dpo:
+  base_ckpt: rednote-hilab/dots.tts-base
+  lora: { enabled: false }

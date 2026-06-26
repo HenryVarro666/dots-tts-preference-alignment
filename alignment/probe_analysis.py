@@ -22,6 +22,9 @@ probe_analysis.py — 第一轮审稿后的统计加固：把 reviewer 最狠的
       (5) **偏相关** corr(FM_margin, reward_gap | guidance,num_steps,speaker) + bootstrap CI + TOST（C1/C5）——
           这是"intrinsic"存亡的唯一裁决；
       (6) per-component：corr(FM_margin, WER_gap / SIM_gap / UTMOS_gap)（若 rewards.jsonl 有分量）。
+      (7) **X1 按 reward_gap 分层**：按 |reward_gap| 的中位数 / 上四分位把 pair 分层，在 **高-gap(非平局)子集**
+          上复用 _pearson/_spearman/_boot_ci 重算 Pearson/Spearman + 95%CI，并与全集对比——回应审稿
+          「win_rate 0.47 大半是 near-tie」：若子集系数仍显著且 |系数| ≥ 全集，则反相关非 near-tie 产物。
 怎么用:
     python alignment/probe_analysis.py \
         --csv alignment/out/probe_per_pair.csv \
@@ -196,6 +199,44 @@ def main() -> None:
     print(f"  删 top-5% |reward_gap|({int((~keep).sum())} 对)后 Pearson={pear_trim:+.3f}（原 {pear:+.3f}）"
           f"{' → 塌向 Spearman，头条必须换秩相关' if abs(pear_trim) < abs(spear) * 1.3 else ''}")
     print(f"  留一法最大单点影响：删 #{imax}(fid={fid[imax]}, reward_gap={rgap[imax]:+.2f}) 使 Pearson 变 {loo[imax]:+.3f}\n")
+
+    # ---- (X1) 按 |reward_gap| 分层：高-gap(非平局)子集存活 ----
+    # 为什么：审稿指出 win_rate≈0.47、平均 win_rate 接近 0.5，怀疑反相关大半来自 near-tie（两候选质量几乎
+    #   一样、reward_gap≈0）对里 FM_margin 的随机噪声。near-tie 对的 |reward_gap| 小，故按 |reward_gap| 分层、
+    #   只留高-gap（真有质量差）子集重算；若反相关在该子集仍显著且不弱于全集，则它不是 near-tie 产物。
+    # 怎么做：复用本文件 _pearson/_spearman/_boot_ci，对 |reward_gap| 中位数(top-50%)与上四分位(top-25%)两档
+    #   阈值各取一次高-gap 子集，与全集系数并排打印；裁决以稳健量 Spearman 为准（与 C4 一致）。
+    agap = np.abs(rgap)
+    print("[X1 高-gap 子集存活] 回应审稿『win_rate 0.47 大半 near-tie』——按 |reward_gap| 分层、只看真有质量差的非平局子集：")
+    print(f"  全集(n={n}):                         "
+          f"Pearson r={pear:+.3f} 95%CI[{pear_ci[0]:+.3f},{pear_ci[1]:+.3f}] {_sig(*pear_ci)} | "
+          f"Spearman ρ={spear:+.3f} 95%CI[{spear_ci[0]:+.3f},{spear_ci[1]:+.3f}] {_sig(*spear_ci)}")
+    for label, q in (("top-50%(>中位数)", 50), ("top-25%(>上四分位)", 75)):
+        thr_g = float(np.percentile(agap, q))
+        sub = agap >= thr_g  # 留 |reward_gap| 大者 = 非平局（真有质量差）
+        ns = int(sub.sum())
+        if ns < 10:
+            print(f"  {label}(|reward_gap|≥{thr_g:.3f}): 子集 n={ns}<10，样本不足，跳过")
+            continue
+        m_s, r_s = margin[sub], rgap[sub]
+        sp, ss = _pearson(m_s, r_s), _spearman(m_s, r_s)
+        sp_ci, ss_ci = _boot_ci(_pearson, (m_s, r_s)), _boot_ci(_spearman, (m_s, r_s))
+        print(f"  {label}(|reward_gap|≥{thr_g:.3f}, n={ns}): "
+              f"Pearson r={sp:+.3f} 95%CI[{sp_ci[0]:+.3f},{sp_ci[1]:+.3f}] {_sig(*sp_ci)} | "
+              f"Spearman ρ={ss:+.3f} 95%CI[{ss_ci[0]:+.3f},{ss_ci[1]:+.3f}] {_sig(*ss_ci)}")
+        sig_sub = ss_ci[0] > 0 or ss_ci[1] < 0  # 子集 Spearman 是否显著（CI 排除 0）
+        ge_full = abs(ss) >= abs(spear)          # 子集 |ρ| 是否不弱于全集
+        if sig_sub and ge_full:
+            verdict = (f"非平局子集 Spearman 仍显著且 |ρ|={abs(ss):.3f} ≥ 全集 {abs(spear):.3f} "
+                       f"→ 坐实：反相关非 near-tie 产物，真有质量差时不弱反更强")
+        elif sig_sub:
+            verdict = (f"非平局子集 Spearman 仍显著但 |ρ|={abs(ss):.3f} < 全集 {abs(spear):.3f} "
+                       f"→ 反相关存活、未被 near-tie 放大（截尾缩小了 gap 动态范围会压系数）")
+        else:
+            verdict = ("非平局子集 Spearman CI 含 0 → 反相关在高-gap 子集未存活，"
+                       "可能是 near-tie 产物或子集样本太少，§6.7 需更大 N 复核")
+        print(f"    → {verdict}")
+    print()
 
     # ---- join 设置-gap ----
     idx = _load_index(Path(args.index))

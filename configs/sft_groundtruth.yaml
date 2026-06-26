@@ -1,0 +1,34 @@
+# sft_groundtruth.yaml — SFT-target 梯度对照臂 X4：用真实录音(on-manifold)继续 SFT（CE+FM+EOS）
+# 为什么: 与 sft_baseline(winners) 训练管线/步数/损失全同，target 换成真实人声录音——奖励轴外的 on-manifold 上界对照。
+# 对实验意义: 真实音频是「目标完全 on-manifold」的一端；预期它**改善**(或至少不崩)，
+#            与 winners(最 off-manifold、预期崩最惨) 形成决定性对比，坐实「off-manifold 目标退化」这一因果方向。
+#
+# 无需抽取脚本: train_manifest 直接指向 prompts 清单(PromptRow)。alignment/data_pairs.py 的
+#   build_single_dataloader 读 `audio = r.get("prompt_audio") or r.get("audio")`——PromptRow 自带
+#   prompt_audio(参考录音=真实人声)，故 target 即真实录音，无需另抽 {fid,text,audio,lang}。不改任何既有 schema。
+
+output_dir: ./alignment/out/sft_groundtruth
+
+learning_rate: 1.0e-5
+max_train_steps: 1500
+warmup_steps: 50
+gradient_accumulation_steps: 4
+micro_batch_size: 1
+grad_clip_norm: 1.0
+num_workers: 2                # 与 dpo configs 一致
+log_interval: 10
+save_interval: 100000  # 只在末尾存一次（save_pretrained 每次写整模型~数GB）
+
+# 真实录音训练数据（= 数据阶段的 prompts 清单本身；build_single_dataloader 取其 prompt_audio 作 target）
+train_manifest: ./data/prompts/dots_manifest_train.jsonl
+
+# 标记为纯 SFT（用 alignment/train_sft.py 跑；走 dots.tts 标准 CE+FM+EOS，无 ref/无配对）
+mode: sft
+# 标准监督损失权重（与 dots.tts 训练一致）
+loss:
+  ce_weight: 1.0
+  fm_weight: 1.0
+  eos_weight: 1.0
+dpo:
+  base_ckpt: rednote-hilab/dots.tts-base
+  lora: { enabled: false }
