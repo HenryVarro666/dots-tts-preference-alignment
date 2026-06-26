@@ -19,7 +19,7 @@ num_workers: 2
 # --- 偏好对齐（本实验新增） ---
 dpo:
   base_ckpt: rednote-hilab/dots.tts-base
-  beta: 0.3                       # 中间档：0.2→0.3 放大 DPO 信号
+  beta: 0.5                       # 0.3->0.5 再放大 DPO 梯度（anchor 仍压 fm_w）
   lambda_sft: 0.2             # 中间档：0.5→0.2 让 DPO 有空间拉开 margin（仍防爆）
   pairs_file: ./pairs/out/pairs_best_worst.jsonl
   reward_weights: { wer: 0.4, sim: 0.3, utmos: 0.3 }   # 记录用（实际奖励在 reward/ 阶段算）

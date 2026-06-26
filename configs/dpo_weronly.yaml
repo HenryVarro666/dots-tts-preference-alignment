@@ -17,7 +17,7 @@ save_interval: 100000  # 只在末尾存一次（save_pretrained 每次写整模
 
 dpo:
   base_ckpt: rednote-hilab/dots.tts-base
-  beta: 0.3                       # 中间档：0.2→0.3 放大 DPO 信号
+  beta: 0.5                       # 0.3->0.5 再放大 DPO 梯度（anchor 仍压 fm_w）
   lambda_sft: 0.2             # 中间档：0.5→0.2 让 DPO 有空间拉开 margin（仍防爆）
   # 用「仅 WER」聚合的偏好对（run_full_dataprep.sh 会产出这个文件）
   pairs_file: ./pairs/out/pairs_weronly.jsonl
