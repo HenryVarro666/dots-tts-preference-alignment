@@ -1,0 +1,26 @@
+# open_soar_vctk.yaml — VCTK(EN, 多说话人) 上的 reward-free 自校正（SOAR 开源再现）
+# 仿 open_soar_selfcorrect.yaml，仅改 output_dir + train_manifest 指向 VCTK 语料产物（管线代码不动）。
+# 为什么: 隔离「自校正」单独贡献，与「外部多目标偏好(DPO)」对照(RQ4)——在多说话人语料上同样需要这个中间臂。
+# 对实验意义: base 与 dpo_multiobj_vctk 之间的关键中间臂。无需外部奖励/偏好对（直接用 VCTK 训练音频清单）。
+
+output_dir: ./alignment/out/open_soar_vctk
+
+learning_rate: 1.0e-5
+max_train_steps: 600    # 防过拟合
+warmup_steps: 50
+gradient_accumulation_steps: 4
+micro_batch_size: 1
+grad_clip_norm: 1.0
+num_workers: 2                # 与 dpo configs 一致（否则 DataLoader 单线程，吞吐不可比）
+log_interval: 10
+save_interval: 100000  # 只在末尾存一次（save_pretrained 每次写整模型~数GB）
+
+# 直接用 VCTK 训练音频清单（偏轨样本在训练内构造，无需 pairs）
+train_manifest: ./data/prompts/vctk_train.jsonl
+
+dpo:
+  base_ckpt: rednote-hilab/dots.tts-base
+  beta: 0.5                       # 0.3->0.5 再放大 DPO 梯度（anchor 仍压 fm_w）
+  lambda_sft: 0.2             # 中间档：0.5→0.2 让 DPO 有空间拉开 margin（仍防爆）
+  soar_noise_scale: 0.5           # 构造 off-trajectory(偏轨)的扰动强度
+  lora: { enabled: false }

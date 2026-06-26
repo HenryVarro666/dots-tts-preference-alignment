@@ -11,6 +11,11 @@
 | `sft_baseline.yaml` | 控制变量 | 仅 winners SFT（排除「只是多数据」） |
 | `streaming_aware.yaml` | stretch | 前缀/边界敏感奖励 |
 | `phaseB/*.yaml` | 门控 | 蒸馏 + 量化 |
+| `{dpo_multiobj,open_soar,sft}_vctk.yaml` | 多语种 scale-up | VCTK(EN, 多说话人)：仿对应基础配置，仅改 `output_dir` + `pairs_file`/`train_manifest` 指向 VCTK 产物 |
+| `{dpo_multiobj,open_soar,sft}_aishell3.yaml` | 多语种 scale-up | AISHELL-3(ZH, 多说话人)：同上指向 AISHELL-3 产物；ZH 的 WER 实为 CER |
 
 **消融维度**（β / 奖励组成 / 配对策略）：用上述配置改对应字段即可，或由 `ablation/run_matrix.py` 注入覆盖。
 默认超参取舍见 `../docs/02-DECISIONS.md`。
+
+**多语种 / 多说话人 scale-up**（VCTK + AISHELL-3）的端到端跑序见 [`../data/run_multilingual.md`](../data/run_multilingual.md)
+（多说话人让 SIM 可判别、规模 >188 对、加中文泛化；含 run_matrix 硬编码 ckpt 路径的 symlink 桥接说明）。
