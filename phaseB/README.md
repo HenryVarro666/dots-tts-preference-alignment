@@ -1,3 +1,7 @@
+> 🔻 **现状更新（重定位后）**：原计划的 A→B 主线**已废**——Phase A 的真数据是**负面结果**（DPO-FM 错配、off-manifold self-train 退化），
+> 门控判据「A 的对齐增益显著为正」**前提不成立**，故 **Phase B（蒸馏+量化）降为远期 future work、未执行、不在本论文范围**。
+> 本目录仅保留为脚手架占位。详见 `docs/02 ADR-8/ADR-11`、`README`、`docs/06`。
+
 # phaseB/ — A→B 主线的「变快变小」一环（门控）
 
 **角色**：把 Phase A 对齐后的模型蒸馏到少步(NFE 1~2) + INT8/INT4 量化，落到 **8GB Turing(RTX2070)**。
