@@ -37,6 +37,12 @@ TREATMENTS = {
     "open_soar": str(PROJ / "alignment" / "out" / "open_soar"),
     "dpo_multiobj": str(PROJ / "alignment" / "out" / "dpo_multiobj"),
     "dpo_weronly": str(PROJ / "alignment" / "out" / "dpo_weronly"),
+    # SFT-target 梯度对照臂 X4：四臂训练管线/步数/损失全同，唯一变量是 target 的奖励轴位置
+    # (winners=best=最 off-manifold → losers=worst → random=随机点 → groundtruth=真实录音=on-manifold)。
+    # 用于隔离「off-manifold 目标退化」vs「小数据 SFT 本身不稳」：预期 winners 崩最惨、groundtruth 改善、random/losers 居中。
+    "sft_losers": str(PROJ / "alignment" / "out" / "sft_losers"),
+    "sft_random": str(PROJ / "alignment" / "out" / "sft_random"),
+    "sft_groundtruth": str(PROJ / "alignment" / "out" / "sft_groundtruth"),
 }
 
 
