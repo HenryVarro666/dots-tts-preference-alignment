@@ -65,28 +65,35 @@ def main() -> None:
             tag = f"{treat}_nfe{nfe}"
             off_dir = PROJ / "inference" / "out" / tag
             st_dir = PROJ / "inference" / "out_streaming" / tag
-            # 1) 离线 + 流式合成
-            # 1) 离线合成 + 打分（RQ1/RQ3 主证据）
-            _run(["python", str(PROJ / "inference" / "batch_synthesize.py"),
-                  "--ckpt", ckpt, "--manifest", args.manifest, "--treatment", tag,
-                  "--num-steps", str(nfe), "--out", str(off_dir)], args.dry_run)
-            #    score_synth: 统一 WER/SIM/UTMOS（复用 reward 后端，不用 seed-tts-eval shell，见 docs/05 B-4/B-5）
-            _run(["python", str(PROJ / "eval" / "score_synth.py"),
-                  "--synth-dir", str(off_dir), "--manifest", args.manifest,
-                  "--treatment", tag, "--sim-backend", args.sim_backend], args.dry_run)
-            # 2) 流式合成 + 打分 + 流式指标（可 --skip-streaming 跳过）
-            if not args.skip_streaming:
-                _run(["python", str(PROJ / "inference" / "batch_synthesize_streaming.py"),
+            status = "ok"
+            # 单个臂的某一步失败（如崩坏臂的合成异常、空目录打分报错）**不应连坐其它臂**：
+            # 捕获该臂、记 status="failed"、继续下一个臂。整矩阵尽量跑全，失败的臂在账本里可溯源。
+            # （batch_synthesize 已内部容错单条生成，这里再兜一层防 score_synth 等步骤的异常。）
+            try:
+                # 1) 离线合成 + 打分（RQ1/RQ3 主证据）
+                _run(["python", str(PROJ / "inference" / "batch_synthesize.py"),
                       "--ckpt", ckpt, "--manifest", args.manifest, "--treatment", tag,
-                      "--num-steps", str(nfe)], args.dry_run)
+                      "--num-steps", str(nfe), "--out", str(off_dir)], args.dry_run)
+                #    score_synth: 统一 WER/SIM/UTMOS（复用 reward 后端，不用 seed-tts-eval shell，见 docs/05 B-4/B-5）
                 _run(["python", str(PROJ / "eval" / "score_synth.py"),
-                      "--synth-dir", str(st_dir), "--manifest", args.manifest,
-                      "--treatment", f"{tag}_stream", "--sim-backend", args.sim_backend], args.dry_run)
-                _run(["python", str(PROJ / "eval" / "streaming_metrics.py"),
-                      "--streaming-dir", str(st_dir), "--treatment", tag], args.dry_run)
+                      "--synth-dir", str(off_dir), "--manifest", args.manifest,
+                      "--treatment", tag, "--sim-backend", args.sim_backend], args.dry_run)
+                # 2) 流式合成 + 打分 + 流式指标（可 --skip-streaming 跳过）
+                if not args.skip_streaming:
+                    _run(["python", str(PROJ / "inference" / "batch_synthesize_streaming.py"),
+                          "--ckpt", ckpt, "--manifest", args.manifest, "--treatment", tag,
+                          "--num-steps", str(nfe)], args.dry_run)
+                    _run(["python", str(PROJ / "eval" / "score_synth.py"),
+                          "--synth-dir", str(st_dir), "--manifest", args.manifest,
+                          "--treatment", f"{tag}_stream", "--sim-backend", args.sim_backend], args.dry_run)
+                    _run(["python", str(PROJ / "eval" / "streaming_metrics.py"),
+                          "--streaming-dir", str(st_dir), "--treatment", tag], args.dry_run)
+            except subprocess.CalledProcessError as e:
+                status = "failed"
+                print(f"  ⚠️ [{tag}] 某步骤非零退出，跳过该臂剩余步骤，继续下一个臂: {e}", file=sys.stderr)
             ledger.append({"treatment": treat, "tag": tag, "ckpt": ckpt, "nfe": nfe,
                            "manifest": args.manifest, "offline_dir": str(off_dir),
-                           "streaming_dir": str(st_dir)})
+                           "streaming_dir": str(st_dir), "status": status})
 
     out = Path(__file__).parent / "ledger.jsonl"
     out.write_text("\n".join(json.dumps(r, ensure_ascii=False) for r in ledger) + "\n", encoding="utf-8")

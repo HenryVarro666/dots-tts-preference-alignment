@@ -29,6 +29,7 @@ probe_fm_reward.py — 决定性探针：FM 损失到底是不是「有效的隐
 from __future__ import annotations
 
 import argparse
+import csv
 import sys
 from pathlib import Path
 
@@ -89,6 +90,8 @@ def main() -> None:
     ap.add_argument("--n", type=int, default=24, help="抽多少个 pair")
     ap.add_argument("--k", type=int, default=24, help="每个 pair 的 MC 采样次数")
     ap.add_argument("--seed0", type=int, default=20260625)
+    ap.add_argument("--out-csv", default="alignment/out/probe_per_pair.csv",
+                    help="逐对结果落盘（解 reviewer 的『headline 不可独立重算』+ 供 probe_analysis.py）")
     args = ap.parse_args()
 
     dev = _device()
@@ -104,6 +107,7 @@ def main() -> None:
     mc_margins: list[float] = []       # K-MC 平均的 L_FM^lose − L_FM^win（去噪 FM margin）
     single_margins: list[float] = []   # 单次(k=0) 的 FM margin（量化噪声）
     win_rates: list[float] = []        # K 次中 winner 更优(L_FM^win<L_FM^lose) 的占比
+    rows_out: list[dict] = []          # 逐对持久化（headline 可独立重算 + 供 probe_analysis）
 
     for idx, r in enumerate(rows):
         fid = str(r["fid"])
@@ -123,9 +127,22 @@ def main() -> None:
         mc_margins.append(mc)
         single_margins.append(per_draw[0])
         win_rates.append(sum(1 for d in per_draw if d > 0) / len(per_draw))
+        rows_out.append({"fid": fid, "win_audio": r["win_audio"], "lose_audio": r["lose_audio"],
+                         "reward_win": float(r["reward_win"]), "reward_lose": float(r["reward_lose"]),
+                         "reward_gap": reward_gaps[-1], "single_margin": per_draw[0],
+                         "mc_margin": mc, "win_rate": win_rates[-1], "k": args.k})
         print(f"  [{idx:2d}] reward_gap={reward_gaps[-1]:+.3f}  "
               f"FM_margin: single={per_draw[0]:+.4f}  MC(K={args.k})={mc:+.4f}  "
               f"win_rate={win_rates[-1]:.2f}")
+
+    # 逐对结果落盘：使 ρ 可一键独立重算（解 R2 的 reproducibility CRITICAL），并供 probe_analysis.py
+    out_csv = Path(args.out_csv)
+    out_csv.parent.mkdir(parents=True, exist_ok=True)
+    with out_csv.open("w", newline="", encoding="utf-8") as f:
+        w = csv.DictWriter(f, fieldnames=list(rows_out[0].keys()))
+        w.writeheader()
+        w.writerows(rows_out)
+    print(f"\n✓ 逐对结果已存 -> {out_csv}  ({len(rows_out)} 行；供 probe_analysis.py)")
 
     n = len(mc_margins)
     pos = sum(1 for m in mc_margins if m > 0)
