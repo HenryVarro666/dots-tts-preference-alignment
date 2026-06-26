@@ -3,7 +3,7 @@
 > **定位**：本文是 RQ1/RQ4 主表（PAPER §5.1）的**落地实测稿**。它把 [`06-核心发现-FM损失与奖励错配.md`](06-核心发现-FM损失与奖励错配.md) §9 的下游预测，由 **n=3 冒烟** 升级为 **全量 n=100 实测**，并给出解盲后的裁决——含一个**超出原预测**的反转（`sft` 也崩）。
 > **数据来源**：`ablation/run_matrix.py` 在 **100 句 LJSpeech held-out** 上、`--nfe 10 --skip-streaming`（离线模式）跑通；管线 `base + 4臂 合成（DotsTtsRuntime.generate）→ WER（Whisper-large-v3）/ SIM（ecapa）/ UTMOS（utmos22_strong）→ aggregate → main_table`。
 > **关联**：机理见 [`06`](06-核心发现-FM损失与奖励错配.md) §3/§4.2；第一轮审稿见 [`07-审稿意见-第一轮.md`](07-审稿意见-第一轮.md)；统稿框架见 [`../PAPER_DRAFT.md`](../PAPER_DRAFT.md) §5.1/§5.3/§6.4/§6.7。
-> **不变量（务必守住）**：Table 1 数字**逐字精确**；**EmergentTTS 列空**（LLM-judge 本次未跑）；**Table 2（streaming）仍 TBD/planned**（本次 `--skip-streaming`）；probe **偏相关（intrinsic 裁决）仍待 `alignment/probe_analysis.py`**，本文**不动** [`06`](06-核心发现-FM损失与奖励错配.md) §6/§6.7 的 intrinsic 措辞。
+> **不变量（务必守住）**：Table 1 数字**逐字精确**；**EmergentTTS 列空**（LLM-judge 本次未跑）；**Table 2（streaming）仍 TBD/planned**（本次 `--skip-streaming`）；probe **偏相关已由 `alignment/probe_analysis.py` 跑出、intrinsic 确立**（partial r=−0.392、CI[−0.548,−0.209]，见 §8），**C6 不变**（intrinsic ≠ intrinsic-to-`L_FM`，诊断仍 preference-likelihood/off-manifold）；[`06`](06-核心发现-FM损失与奖励错配.md) §6/§6.7 正文措辞的同步另行处理。
 
 ---
 
@@ -115,9 +115,48 @@
 1. **SFT-random 对照**（裁决 §3.1 新论点 / caveat 1）：跑 **SFT-on-random-candidates vs SFT-on-reward-winners** —— 若 random 不崩、reward-winner 崩，则「off-manifold 目标」为因，新论点坐实；若两者都崩，则混入「小数据 SFT 不稳」，须降级表述。
 2. **`dpo_multiobj` 发散诊断**：定位 25% immediate-EOS 的触发——训练曲线 EOS-loss / reward-margin 轨迹、是否 over-optimization 吸引子；区分 graded degradation vs optimization divergence（caveat 2）。
 3. **`LJ002` 聚集排查**（caveat 3）：核对失败句的 **prompt 长度 / 内容 / 评测集排序 / fid 块边界**，判定崩坏是否与某结构性因素绑定，而非均匀；据此决定是否需重排评测集 / 扩 n。
-4. **`probe_analysis.py` 偏相关**（intrinsic 裁决，沿用 [`06`](06-核心发现-FM损失与奖励错配.md) §6.2/§8.2）：`corr(FM-margin, reward-gap | guidance, num_steps, speaker_scale)` + TOST + 杠杆诊断——裁决反相关是 intrinsic 还是 grid effect。**本文不动 §6.7 intrinsic 措辞，待该输出**。
+4. ~~**`probe_analysis.py` 偏相关**（intrinsic 裁决）~~ **✓ 已完成（见 §8）**：`corr(FM-margin, reward-gap | guidance, num_steps, speaker_scale)` = **partial −0.392、CI[−0.548,−0.209]、显著**，控住全部生成 knob 仍存活 → **裁决：intrinsic（反相关非 grid effect）**；num_steps r=−0.237 是温和混淆但被偏相关控住。**C6 守住**：intrinsic ≠ intrinsic-to-`L_FM`，诊断仍 preference-likelihood/off-manifold。
 5. **人类听测（ABX/MOS，≥15–20 听者）**：崩坏臂的量级与 UTMOS 退化须由人耳锚定；未做前**不称** perceptual / naturalness 退化（[`07`](07-审稿意见-第一轮.md) P2）。
 6. **补全 TBD**：Table 2（streaming：首包延迟 / RTF / 边界不连续度 / 流式 WER，本次 `--skip-streaming` 未跑）；EmergentTTS 列（LLM-judge 胜率）。
+
+---
+
+## 8. `probe_analysis.py` 实测：intrinsic 裁决落地（偏相关 / confound / per-component / 杠杆 / binomial）
+
+> 这是 §7 下一步第 4 项的**回填**。`alignment/probe_analysis.py`（偏相关 + 修正后的 confound + per-component + 杠杆诊断 + 双系数 bootstrap CI）在全量 **N=188** pair 上跑出，**裁决：反相关是 intrinsic**——它**不是候选生成 knob 的产物**（偏相关控住 guidance/num_steps/speaker 全部 grid 维度后仍存活）。**严守 C6**：此处 intrinsic ≠「intrinsic to `L_FM`」（`L_FM` 仍是有效似然代理，open-SOAR 为证）；诊断**仍是** preference-likelihood 对齐失败 / off-manifold winner，**不回退** [`06`](06-核心发现-FM损失与奖励错配.md) §6 的措辞。
+
+### 8.1 偏相关（决定性，C1/C5）：intrinsic 确立
+
+- **corr(FM-margin, reward-gap | guidance, num_steps, speaker) = partial r = −0.392，95%CI [−0.548, −0.209]，显著。**
+- 原始 Pearson **−0.411** → 控住全部生成 knob 后 **−0.392**（**几乎不变**）→ **反相关 SURVIVES partialling**。
+- 裁决：由「待裁决 / 未排除」**确立为 intrinsic**——反相关不被任一生成设置（含温和混淆 num_steps）解释。
+
+### 8.2 confound（修正测对的量：FM-margin × setting-gap）
+
+> 第一轮审稿（[`07`](07-审稿意见-第一轮.md) C1/C5/DA）指出旧 confound 测错了量（测的是 corr(reward-gap, setting-gap)）。`probe_analysis.py` **改测 corr(FM-margin, setting-gap)**：
+
+| 生成设置 | corr(FM-margin, setting-gap) | 显著性 |
+|---|---|---|
+| guidance_scale | **−0.067** | ns |
+| **num_steps（NFE）** | **−0.237**（CI [−0.360, −0.102]） | **显著** |
+| speaker_scale | **−0.067** | ns |
+
+- **num_steps(NFE) 是真实但温和的混淆**（单独显著）；guidance/speaker 无关。
+- 但 §8.1 偏相关已**控住** num_steps，反相关仍 **−0.392** → **不被 num_steps 解释**。如实写：num_steps 单独显著，partial 控住后存活。
+
+### 8.3 头条统计（C4 保持）+ 杠杆诊断
+
+- **头条**：Spearman **ρ = −0.187**（ρ² = 3.5%、CI [−0.335, −0.036]、显著）领头条；Pearson **−0.411**（r² = 0.169、CI [−0.556, −0.235]）并列为**杠杆放大的线性系数**。
+- **杠杆**：删 top-5% |reward-gap|（10 对）后 Pearson = **−0.282**（仍显著负）；留一法最大单点影响仅 **0.038**（**无单点主导**）。→ Pearson 受高-gap 对放大，但**非少数点伪影**（trim 后仍 −0.282）。
+- **binomial**：82/188 **p = 0.093**（**不写 at chance**，亦不写显著）。
+- **独立性**：distinct prompt **188/188**（prompt 级独立、单说话人）。
+
+### 8.4 per-component（R2/R3 关键新结果）：每个 perceptual 轴都更 off-manifold
+
+- corr(FM-margin, 分量 gap)：WER-gap **+0.412**、SIM-gap **−0.676**、UTMOS-gap **−0.597**（均显著）。
+- 换到 **reward-对齐方向**（−WER / +SIM / +UTMOS），三轴**全部负相关**：(−WER) **−0.41**、SIM **−0.68**、UTMOS **−0.60**。
+- **不是「只是 FM-vs-WER」**：SIM/UTMOS 反相关**更强** → 每个 perceptual 轴的「更好」都**更 off-manifold** → 结论从「只修 reward 组成」**强化为「整体弃 FM-as-reward」**。
+- **caveat（domain reviewer）**：SIM 在单说话人 LJSpeech 近 ceiling、判别弱，其 **−0.68 须标注可能被少数有 SIM 差的对带动**；**UTMOS −0.60 较实**。
 
 ---
 
@@ -131,6 +170,6 @@
 | 指标 | WER（Whisper-large-v3）/ SIM（ecapa）/ UTMOS（utmos22_strong）；EmergentTTS 未跑 |
 | CI | bootstrap 95%（utterance-level） |
 | n | base/sft/open_soar/dpo_weronly = 100；**dpo_multiobj = 75（25% 生成失败）** |
-| 未跑 | Table 2 streaming（`--skip-streaming`）、EmergentTTS、`probe_analysis.py` 偏相关 |
+| 未跑 | Table 2 streaming（`--skip-streaming`）、EmergentTTS（`probe_analysis.py` 偏相关**已跑**，见 §8） |
 
 > 本机（macOS / 无 GPU / 权重未下载）无法执行评测；上表为 GPU 机器实测结果回填，数字逐字精确、未经改动。
