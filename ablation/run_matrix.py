@@ -43,6 +43,13 @@ TREATMENTS = {
     "sft_losers": str(PROJ / "alignment" / "out" / "sft_losers"),
     "sft_random": str(PROJ / "alignment" / "out" / "sft_random"),
     "sft_groundtruth": str(PROJ / "alignment" / "out" / "sft_groundtruth"),
+    # P2 建设性臂：测「负面结果配上『该怎么做』」
+    # dpo_onmanifold=只用 on-manifold winner 的 pair 重训 DPO（X6a，能否救 DPO-FM）；
+    # reward_weighted=朝 winner 做 reward 加权回归、不做 win/lose 的 L_FM 对比（X6b，不踩错配坑）；
+    # reward_weighted_weronly=X7，在非错配框架内干净复现 reward-hacking（WER-only 取最低 WER 但自然度退化）。
+    "dpo_onmanifold": str(PROJ / "alignment" / "out" / "dpo_onmanifold"),
+    "reward_weighted": str(PROJ / "alignment" / "out" / "reward_weighted"),
+    "reward_weighted_weronly": str(PROJ / "alignment" / "out" / "reward_weighted_weronly"),
 }
 
 
