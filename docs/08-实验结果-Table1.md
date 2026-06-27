@@ -184,6 +184,18 @@
 - **confound / 偏相关段——按设计跳过**：setting_gap 恒为 0 → corr(FM-margin, const)=NaN、对常数偏相关是 no-op（否则循环论证）；设置控制已由**配对设计**达成（§8.2 中 num_steps −0.237 的温和混淆在此被设计性消除）。
 - **裁决**：**intrinsic 经最强设计（settings-matched）确认、保留**；头条系数改取 **Spearman**；现由 settings-matched 配对**无条件**支撑（强于、并 supersede/augment §8.1 的 partial −0.392）。**C6 不变**：intrinsic ≠ intrinsic-to-`L_FM`，诊断仍 preference-likelihood / off-manifold。
 
+### 8.6 X10 VoxCPM 架构级复现（cross-architecture re-probe · 跨独立实现泛化）：CLOSES EIC CRITICAL #3
+
+> X10 = **cross-architecture probe**：把**同一批 dots 生成的 winner/loser 偏好对**喂给 **VoxCPM**——一个**独立实现**的 continuous-latent TTS（**diffusion-AR、tokenizer-free、手写 MiniCPM-4 backbone + 自有 AudioVAE**，by OpenBMB）vs dots.tts（**flow-matching**，by rednote/SJTU）——测 VoxCPM **自己的训练 FM loss**（per-sample velocity-MSE，源码核验 == dots `fm_loss` 同源；probe self-check 通过：determinism exact、L_FM finite positive），corr(FM_margin, reward_gap)。这把「intrinsic」从**单模型**推到**跨独立实现**，正面回答 EIC CRITICAL #3（N=1 model 不能泛化）。两次 run：
+
+- **GRID pool（K=16，`pairs_best_worst`，生成设置 VARY → confound present）= provenance**：Spearman **ρ=−0.087**（**不显著**、CI[−0.248,+0.067]）；Pearson **−0.279**（显著但杠杆驱动：ratio **3.20**、一个 LOO 点即翻号）→ **混淆 grid 池上稳健秩统计为 NULL**。**作 provenance 上报**（非反例）：它正展示「生成设置混淆把效应掩盖」。
+- **SETTINGS-MATCHED（K=32，`pairs_settings_matched`，setting_gap≡0、confound 按构造移除）= 头条**：Spearman **ρ=−0.266 显著**、95%CI[−0.413,−0.112]、置换检验 **p_perm=0.0003**（R6、cluster-respecting）。Pearson **−0.461**[−0.605,−0.285]、**Pearson/Spearman=1.73（<2 → HEALTHY、非杠杆驱动）**（对照 dots X5 的 ratio 2.26：VoxCPM 线性系数更稳）。
+- **高-gap 存活（答死「win_rate<0.5 大半 near-tie」）**：top-50% ρ=**−0.302**、top-25% ρ=**−0.368**（均显著）→ **真有质量差时反相关更强 → 非 near-tie 伪影**。
+- **per-component（reward-对齐、三轴全反相关，与 dots.tts **同一签名**）**：WER_gap **+0.336** 原始（reward 偏好低 WER → reward-对齐 −WER = **−0.336**）、SIM_gap **−0.673**（trim-top5% 后 **−0.471** 仍存活、显著）、UTMOS_gap **−0.529**（全显著）→ 与 dots.tts §8.4/§8.5 的 per-component pattern 一致。
+- **去噪 / win_rate**：binomial **80/188=0.426**、p=0.049、win_rate **0.394**（FM 平均偏好更「典型」的 loser）。
+- **「混淆在 grid 上掩盖、settings-matched 揭示」叙事（机制，非矛盾）**：grid null（ρ=−0.087 ns）**是机制证据而非反例**——生成设置混淆在 VoxCPM 上比在 dots.tts 上掩盖效应**更甚**；settings-matched 配对设计（setting_gap≡0）按构造移除混淆后，**内在反相关浮现**，robust、与 dots.tts 自身 X5 settings-matched（Spearman ρ=−0.216，见 §8.5）**相当或略强**。
+- **裁决（CLOSES EIC CRITICAL #3）**：反相关在 VoxCPM 上**无混淆复现**、稳健 → 现象是**架构级**，跨 **N=2 个独立 continuous-latent 实现**（flow-matching dots.tts + diffusion-AR VoxCPM）。**CALIBRATION（不过度声称）**：scope = **continuous-latent（flow-matching / diffusion）TTS**，由 **N=2 独立实现**佐证——**非「all TTS」、非 discrete-token TTS、仍仅 2 个模型**。头条取 **settings-matched Spearman ρ=−0.266**（无混淆设计），**Pearson −0.461** 作杠杆已核验的次要系数，**grid −0.087(ns) 仅作 provenance**；**与 dots X5 同一 settings-matched 纪律**。
+
 ---
 
 ## 附录 A · 复现与配置（校验基准）
