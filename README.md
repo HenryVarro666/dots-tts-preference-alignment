@@ -26,7 +26,7 @@
 
 **两条主结论**：
 
-1. **off-manifold self-training 退化，与训练目标无关。** 把四个对齐臂按「往 automatic-reward 选出的自生成 winner（off-manifold）拉的强度」排序，崩坏**单调加剧**：`open_soar`（训向真实 clean 音频=on-manifold，**改善**）→ `dpo_weronly`（弱拉，≈base）→ `sft`（强拉、纯监督，**崩**）→ `dpo_multiobj`（最强拉 + 反向梯度，**灾难 + 25% 发散**）。连「不做 win/lose `L_FM` 对比」的纯 SFT 都崩 → 毒源是**目标分布本身（off-manifold winner）**，而非 DPO 的对比机制。
+1. **off-manifold self-training 退化，与训练目标无关。** 把四个对齐臂按「往 automatic-reward 选出的自生成 winner（off-manifold）拉的强度」排序，崩坏**单调加剧**：`open_soar`（训向真实 clean 音频=on-manifold，**改善**）→ `dpo_weronly`（弱拉，≈base）→ `sft`（强拉、纯监督，**崩**）→ `dpo_multiobj`（最强拉 + 反向梯度，**灾难 + 25% 生成失败**）。连「不做 win/lose `L_FM` 对比」的纯 SFT 都崩 → 毒源是**目标分布本身（off-manifold winner）**，而非 DPO 的对比机制。
 2. **FM 似然与 perceptual reward 内在反相关。** 头条 **Spearman ρ=−0.187**；**偏相关 −0.392**（控住 guidance/num_steps/speaker_scale 全部生成 knob 后存活，CI[−0.548,−0.209]）→ **intrinsic 确立**（非 grid 副产品）。换到 reward-对齐方向，三个 perceptual 轴**全负**：(−WER) **−0.41** / SIM **−0.68** / UTMOS **−0.60**（**SIM/UTMOS 比 WER 更强** → 不是「只修 reward 组成」能救，须整体弃 FM-as-reward）。
 
 **机理定性（C6 严守）**：失败**不在** `L_FM` 本身——**`L_FM` 是有效似然代理**（`open_soar` 用同一损失训出五臂最佳 UTMOS 为证）；失败在 **preference-likelihood 对齐**——偏好对的 winner 是 off-manifold，把似然往那里拉就与质量背离。这正是已知的 **likelihood-vs-quality / CFG gap** 在 TTS 偏好对齐上的具体体现。
@@ -38,8 +38,8 @@
 ## 已知 caveat（写进结论，不藏）
 
 - **`sft` 崩坏与「小数据 SFT 过拟合/灾难性遗忘」尚未干净分离**（188 单说话人）——待 **X4（SFT-target 梯度对照：winners/losers/random/groundtruth）** 隔离；`open_soar` 同规模微调不崩是**部分对照**，故「off-manifold 退化」目前是**强假设**。
-- **`dpo_multiobj` 的 25% 是 immediate-EOS / optimization divergence，非 graded 退化**——崩坏量级超出弱单调相关（ρ=−0.187）所能预测，须区分 graded degradation vs optimization divergence。
-- **失败全聚集 `LJ002` 块**（非均匀崩坏，疑与 prompt 长度/内容/评测集排序绑定，待 X2/X3 诊断）。
+- **`dpo_multiobj` 的 25% 是 immediate-EOS 的「生成时子集崩」**——崩坏量级超出弱单调相关（ρ=−0.187）所能预测，但**「graded 退化 vs optimization divergence」证据不一、暂不定论**（X2/X3 实测：训练 `fm_w` 稳 ~0.74、未二次爆、margin 仍小 0.065 → **训练未发散**；交叉表 34% vs 48% 偏 divergence；**合判 = 生成时子集崩**），保守报告、不径直坐实 divergence。
+- **失败聚于 `LJ002` 块须诚实归因**（X2/X3 已诊断）：评测集本身 **89% 为 LJ002**（89/100），故聚集**部分因 LJ002 占评测主体**；组内 **LJ001 0/11（0%）vs LJ002 25/89（28%）**（小 n、p≈0.02）仍是真实 prompt 依赖、**非均匀**，失败样本仅**轻微偏长（1.12×）、无位置偏置**——**不写成「长 prompt 触发」**。
 - **无人类听测（ABX/MOS）**——崩坏量级与 UTMOS 退化未由人耳锚定，未做前**不称** perceptual/naturalness 退化。
 
 ## 第二轮实验程序（脚手架已建，本机仅 py_compile，GPU 上跑，结果待出）
