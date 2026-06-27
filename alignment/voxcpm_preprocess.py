@@ -47,8 +47,10 @@ voxcpm_preprocess.py — 唯一对接 VoxCPM(VoxCPM2) 训练侧的「适配器�
 ────────────────────────────────────────────────────────────────────────────
 本文件「不能仅凭代码核验」的点，全部显式标注(仓库纪律)：
   〔需核实 A — VoxCPM 训练侧接口可跑性〕`training/packers.py`/`training/data.py` 是**训练专用代码**，
-     本机无 GPU/权重、且 `datasets`/`argbind` 可能未装；packer 在真实 `AudioVAEV2` 权重上的端到端
-     行为(VAE 编码维度、patch 对齐)未实跑验证。已用「直接构造 packer + 复刻 collate」最小化依赖。
+     本机无 GPU/权重；`training.__init__` 会 eager import `.data`(顶层 argbind/datasets)——这些训练专用包
+     远程实测确未装(报 `No module named 'argbind'`)。已修：**按文件路径独立加载 packers.py(绕开 training.__init__)
+     + 复刻 collate**，零额外 pip 依赖（packers 仅需 einops）。packer 在真实 `AudioVAEV2` 权重上的端到端
+     行为(VAE 编码维度、patch 对齐)仍待 GPU 实跑——由 probe 的 `--selfcheck`(L_FM 有限正值)兜底。
   〔需核实 B〕`model.text_tokenizer(text)` 返回 list[int] —— 据 train_voxcpm_finetune.py:119 与
      voxcpm2 推理路径推断，未实跑。
   〔需核实 C〕音频按 `model.audio_vae.sample_rate`(=16000) 加载 —— 据 train_voxcpm_finetune.py:105
@@ -102,6 +104,26 @@ def ensure_voxcpm_importable() -> None:
     s = str(src)
     if s not in sys.path:
         sys.path.insert(0, s)
+
+
+def _import_packer_class():
+    """只取 `training/packers.py` 里的 `AudioFeatureProcessingPacker`，**绕开 `voxcpm.training.__init__`**。
+
+    为什么(seam A)：`from voxcpm.training.packers import ...` 会先执行 `voxcpm/training/__init__.py`，
+    它 eager import `.data`(顶层 `import argbind` + `from datasets import ...`) 等**训练专用重依赖**——
+    探针只做前向、用不到这些；它们多半没装(就是本次的 `No module named 'argbind'`)。
+    而 `packers.py` **自包含**(仅 torch + einops、无 voxcpm 内部相对导入)，故按**文件路径独立加载**，
+    零额外 pip 依赖、不碰主管线 torch。
+    """
+    import importlib.util
+    import voxcpm  # 顶层包安全(不触发 training；探针已能 from voxcpm.core import VoxCPM)
+    pk = Path(voxcpm.__file__).resolve().parent / "training" / "packers.py"
+    if not pk.exists():
+        raise FileNotFoundError(f"找不到 VoxCPM packers.py: {pk}（VoxCPM 版本/目录布局变了？）")
+    spec = importlib.util.spec_from_file_location("_voxcpm_packers_standalone", pk)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)  # packers.py 无相对导入 → 可独立执行（仅需 einops）
+    return mod.AudioFeatureProcessingPacker
 
 
 # --------------------------------------------------------------------------- #
@@ -165,7 +187,8 @@ class VoxCPMPreprocessor:
 
     def __init__(self, model, device):
         ensure_voxcpm_importable()
-        from voxcpm.training.packers import AudioFeatureProcessingPacker  # type: ignore
+        # 按文件路径加载 packer，绕开 training.__init__ 的 argbind/datasets 重依赖(seam A，见 _import_packer_class)。
+        AudioFeatureProcessingPacker = _import_packer_class()
 
         self.model = model
         self.device = device
