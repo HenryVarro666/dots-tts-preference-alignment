@@ -164,6 +164,12 @@ def _boot_ci(fn, arrays, B=3000, seed=20260626, alpha=0.05):
         v = fn(*[np.asarray(a)[idx] for a in arrays])
         if v == v:  # 排除 NaN
             stats.append(v)
+    # 退化保护（X5 settings-matched 触发）：若每个 bootstrap 复本都是 NaN ⇒ stats 全空。
+    #   成因：某输入列为常数——settings-matched 下 setting_gap≡0，_pearson 因 std==0 恒返回 NaN。
+    #   旧码此处直接 np.percentile([])→IndexError 炸全程（见 run_x5.sh 第 5 步）。CI 此时无定义，
+    #   返回 (nan, nan) 让上层退化为「NaN/不显著」而非崩溃（run_x5.sh 已声明该退化属正常）。
+    if not stats:
+        return float("nan"), float("nan")
     lo, hi = np.percentile(stats, [100 * alpha / 2, 100 * (1 - alpha / 2)])
     return float(lo), float(hi)
 
@@ -174,6 +180,8 @@ def _binom_two_sided(k: int, n: int, p: float = 0.5) -> float:
 
 
 def _sig(lo: float, hi: float) -> str:
+    if lo != lo or hi != hi:  # NaN CI（退化：常数列/全 NaN bootstrap）——既非「排除 0」也非「含 0」，须如实标注
+        return "退化(NaN CI：常数列/样本不足)"
     return "显著(CI 排除 0)" if (lo > 0 or hi < 0) else "不显著(CI 含 0)"
 
 
@@ -288,9 +296,24 @@ def main() -> None:
         else:
             ok.append(False)
     ok = np.array(ok)
-    if ok.sum() >= 10:
+    n_join = int(ok.sum())
+    if n_join >= 10:
         m_ok, r_ok = margin[ok], rgap[ok]
         G = np.column_stack([np.array(g[k]) for k in g])
+    # X5 settings-matched 检测：winner/loser 同设置 ⇒ 每个 setting_gap 列恒为常数(≡0)。此时整段
+    #   confound/偏相关在数学上退化：(a) corr(FM_margin, 常数)=NaN、bootstrap 全空（_boot_ci 已护住）；
+    #   (b)「partial out 一个常数」是无操作 ⇒ 偏相关恒等于原始相关，写「控住设置后基本不变→intrinsic」是循环论证。
+    #   故按 run_x5.sh 设计在此跳过本段；intrinsic 改由上方 C4 headline 在「设置完全相等」对上是否仍显著
+    #   反相关来无条件裁决（强于线性偏相关，消线性+非线性+交互三类设置依赖）。
+    settings_matched = n_join >= 10 and bool(np.all(G.std(axis=0) <= 1e-12))
+    if settings_matched:
+        _emit(f"[C1/DA confound + C1/C5 偏相关] 跳过：检出 settings-matched（X5，join {n_join}/{n}）——三个 setting_gap 全为常数 0")
+        _emit("  winner/loser 同 guidance/num_steps/speaker、仅变 seed ⇒ setting_gap≡0：")
+        _emit("  • confound 相关 corr(FM_margin, 常数)=NaN（无定义）；")
+        _emit("  • 偏相关「控住常数设置」是无操作 ⇒ 恒等于原始相关，自证 intrinsic 属循环论证，故不报。")
+        _emit("  设置控制已由『配对设计』无条件达成（强于线性偏相关）。")
+        _emit("  ▶ intrinsic 裁决看上方 [C4 headline]：FM_margin vs reward_gap 在设置完全相等的对上是否仍显著反相关。\n")
+    elif n_join >= 10:
         _emit(f"[C1/DA 正确的 confound 测] corr(FM_margin, 各 setting_gap)  (join 成功 {int(ok.sum())}/{n}):")
         for j, k in enumerate(g):
             c = _pearson(m_ok, G[:, j]); ci = _boot_ci(_pearson, (m_ok, G[:, j]))
