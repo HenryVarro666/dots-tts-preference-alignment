@@ -29,6 +29,8 @@ dependencies = [
     "deepspeed>=0.15.0",  # ZeRO-2/3（full-param DPO 在 2 卡上的显存分片）
     "pyyaml>=6.0",        # 配置解析（dots.tts 也用）
     "numpy>=1.24",
+    "tensorboard>=2.14",  # 训练曲线（fm_w/reward_margin/dpo 等）；缺它训练只写 metrics.jsonl 并跳一条良性 warning，
+                          #   装上才有 tb/ 曲线——X3 graded-vs-divergence 的人工裁决要看末段 fm_w 是否二次爆。
 ]
 
 # seed-tts-eval 的 funasr/zhconv/modelscope 由 env/setup_env.sh 单独从其 requirements.txt 装。
