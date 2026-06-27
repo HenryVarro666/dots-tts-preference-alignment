@@ -46,7 +46,7 @@
 | 位置偏置 | 失败样本落后段 **52%**，**无明显位置偏置** |
 | 对主表的影响 | `dpo_multiobj` 主表 **n=75**（仅成功句）；WER 0.752 是成功子集的值，**失败句更差** |
 
-**判读（保守诚实 · graded-vs-divergence 证据不一）**：25% 的 immediate-EOS 是**在某 prompt 子集上的生成时崩**（generation-time collapse on a prompt subset）；它与 graded（Spearman −0.187 的弱单调）**不同质**，但**「graded 退化 vs optimization divergence」的证据相互不一致，暂不下定论**——
+**判读（保守诚实 · graded-vs-divergence 证据不一）**：25% 的 immediate-EOS 是**在某 prompt 子集上的生成时崩**（generation-time collapse on a prompt subset）；它与 graded（Spearman −0.216 的弱单调）**不同质**，但**「graded 退化 vs optimization divergence」的证据相互不一致，暂不下定论**——
 
 > - **训练曲线偏「未发散」**：X2/X3 实测，`dpo_multiobj` 训练 `fm_w` **全程稳定 ~0.74**（末段 / 早段比 **1.01×**、**未二次爆**、reward-margin 仍小 **0.065**）→ **训练阶段并未发散**（区别于 run0 式早期 over-optimization 的训练时爆炸）。
 > - **交叉表偏「divergence」**：按 |reward-gap| 分层，大-gap 对的 FM 与 reward **更脱钩**（同向率 **34%** vs 小-gap **48%**）→ 偏 divergence。
@@ -94,7 +94,7 @@
 > **裁决：是（active degradation 证实）。**
 > 依据：`dpo_multiobj` WER CI **[0.566, 1.035]** 与 base **[0.071, 0.142]** **不重叠**，且叠加 **25% 生成失败**（immediate-EOS/no-payload）。→ PAPER §6.7 的「active degradation」预测**证实**。
 
-> ⚠️ **但含「生成时崩」成分（caveat 2）**：25% 失败是 immediate-EOS / no-payload 的**生成时子集崩**，与 graded（Spearman −0.187 的弱单调）**不同质**——崩坏量级**超出**弱单调相关所能预测的范围。但**「graded vs optimization divergence」证据不一**：X2/X3 训练曲线 `fm_w` **全程稳 ~0.74、未二次爆、margin 仍小 0.065 → 训练未发散**（非 run0 式训练时爆炸）；交叉表大-gap 对 FM-reward 更脱钩（同向率 **34%** vs 小-gap **48%**）**→ 偏 divergence**；**合判为「训练温和但模型已 off-manifold 漂移 → 部分 prompt 生成时崩」**。故 active-degradation 成立，但**既不可纯归因 graded 反相关、亦不可径直断言 optimization divergence**，须**保守如实**，待人工 TB-curve 复核 + 失败句听测裁决。
+> ⚠️ **但含「生成时崩」成分（caveat 2）**：25% 失败是 immediate-EOS / no-payload 的**生成时子集崩**，与 graded（Spearman −0.216 的弱单调）**不同质**——崩坏量级**超出**弱单调相关所能预测的范围。但**「graded vs optimization divergence」证据不一**：X2/X3 训练曲线 `fm_w` **全程稳 ~0.74、未二次爆、margin 仍小 0.065 → 训练未发散**（非 run0 式训练时爆炸）；交叉表大-gap 对 FM-reward 更脱钩（同向率 **34%** vs 小-gap **48%**）**→ 偏 divergence**；**合判为「训练温和但模型已 off-manifold 漂移 → 部分 prompt 生成时崩」**。故 active-degradation 成立，但**既不可纯归因 graded 反相关、亦不可径直断言 optimization divergence**，须**保守如实**，待人工 TB-curve 复核 + 失败句听测裁决。
 
 ---
 
@@ -115,7 +115,7 @@
 ## 6. 全部 caveat（5 条，务必如实，须写进 PAPER §5/§6/§7）
 
 1. **`sft` 崩坏与「小数据 SFT 过拟合 / 灾难性遗忘」混淆**：188 单说话人 SFT 本就易过拟合 / 遗忘；干净判别需 **SFT-on-random-candidates vs SFT-on-reward-winners** 对照（future work）。`open_soar`（**同规模微调、同优化器族**）不崩是**部分对照**，指向「**目标分布（off-manifold winner）**」而非单纯「SFT 不稳」——但**未完全排除**，§3.1 新论点仍是强假设。**另须显式点名跨臂步预算不对称**：`open_soar` 与两个 DPO 臂均 **600 步**、而 `sft` 为 **1500 步**（同规模 / 同优化器族**但步预算不同**），故「`open_soar` 安全 vs `sft` 崩」原则上仍可能被步数差混淆。该步差混淆由**步数匹配的 X4（`sft_groundtruth`@1500、on-manifold、同 SFT 目标、仅变 target 流形位置）**在跑出后关闸消除；佐证：`dpo_multiobj` **仅 600 步即灾难崩**、而唯一 1500 步的 `sft` 崩坏**居中**（§3 序③，介于 ②`dpo_weronly` 与 ④`dpo_multiobj` 之间）→ **步数与崩坏非单调**，反证步数非头条驱动。
-2. **`dpo_multiobj` 的 25% 失败是 immediate-EOS / no-payload 的「生成时子集崩」**，与 graded（Spearman −0.187）**不同质**；崩坏量级超出弱单调相关的预测。但**「graded vs optimization divergence」证据不一**：X2/X3 训练曲线 `fm_w` 全程稳 ~0.74、**未二次爆**、margin 仍小 0.065 → **训练未发散**（非 run0 式训练时爆炸）；交叉表大-gap 对 FM-reward 更脱钩（34% vs 48%）→ **偏 divergence**。**合判 = 训练温和但模型已 off-manifold 漂移 → 部分 prompt 生成时崩**；**保守报告，不径直断言 optimization divergence**，待人工 TB-curve + 失败句听测裁决。这**强化 off-manifold 论点**：错向梯度不靠炸训练指标（`fm_w` 未再爆、margin 仍小）、而是悄悄把模型推离流形。
+2. **`dpo_multiobj` 的 25% 失败是 immediate-EOS / no-payload 的「生成时子集崩」**，与 graded（Spearman −0.216）**不同质**；崩坏量级超出弱单调相关的预测。但**「graded vs optimization divergence」证据不一**：X2/X3 训练曲线 `fm_w` 全程稳 ~0.74、**未二次爆**、margin 仍小 0.065 → **训练未发散**（非 run0 式训练时爆炸）；交叉表大-gap 对 FM-reward 更脱钩（34% vs 48%）→ **偏 divergence**。**合判 = 训练温和但模型已 off-manifold 漂移 → 部分 prompt 生成时崩**；**保守报告，不径直断言 optimization divergence**，待人工 TB-curve + 失败句听测裁决。这**强化 off-manifold 论点**：错向梯度不靠炸训练指标（`fm_w` 未再爆、margin 仍小）、而是悄悄把模型推离流形。
 3. **失败聚于 `LJ002` 子集**（`sft`、`dpo_multiobj` 皆然）须**诚实归因**：评测集（`eval_big` 取前 100 held-out）**本身 89% 为 LJ002**（89/100），故聚集**部分因 LJ002 占评测主体**；但组内 **LJ001 0/11（0%）vs LJ002 25/89（28%）**（小 n、p≈0.02）仍是真实 prompt 依赖，失败样本仅**轻微偏长（text 105 vs 94 = 1.12×）、无位置偏置（后段 52%）**——**不写成「长 prompt 触发」**。仍**须专项排查**（prompt 内容 / 评测集排序 / fid 块边界）；这也是 n=3 冒烟（全 `LJ001`）漏掉崩坏的直接原因。
 4. **崩坏臂 CI 极大**（`sft` WER **[0.25, 1.06]**、`dpo_multiobj` WER **[0.57, 1.04]**、UTMOS **[2.58, 3.11]**）、**单说话人 LJSpeech**、**无人类听测（ABX/MOS）**——量级**仅供方向**，不可当精确效应。
 5. **`dpo_multiobj` 主表 WER 0.752 只统计成功的 75 条**（失败的更差），故**失败率（25%）必须与 WER 0.752 并列**报告，否则**低估崩坏**。
@@ -158,7 +158,7 @@
 
 ### 8.3 头条统计（C4 保持）+ 杠杆诊断
 
-- **头条**：Spearman **ρ = −0.187**（ρ² = 3.5%、CI [−0.335, −0.036]、显著）领头条；Pearson **−0.411**（r² = 0.169、CI [−0.556, −0.235]）并列为**杠杆放大的线性系数**。
+- **头条（原 best_worst 探针；settings-matched X5 复核见 §8.5）**：Spearman **ρ = −0.187**（ρ² = 3.5%、CI [−0.335, −0.036]、显著）领头条；Pearson **−0.411**（r² = 0.169、CI [−0.556, −0.235]）并列为**杠杆放大的线性系数**。
 - **杠杆**：删 top-5% |reward-gap|（10 对）后 Pearson = **−0.282**（仍显著负）；留一法最大单点影响仅 **0.038**（**无单点主导**）。→ Pearson 受高-gap 对放大，但**非少数点伪影**（trim 后仍 −0.282）。
 - **高-gap 分层（答死 near-tie 质疑）**：按 |reward-gap| 分层，反相关在**非平局（真有质量差）子集反而更强 ≈2×**——**top-50%**（|gap| ≥ 1.390，n=94）Spearman **−0.407**（CI [−0.585, −0.197]、Pearson −0.520）、**top-25%**（|gap| ≥ 1.878，n=47）Spearman **−0.440**（CI [−0.650, −0.160]、Pearson −0.477），均双显著、均 ≥ 全集 −0.187。→ 反相关**不是「win_rate 0.47 大半 near-tie」平局稀释出的假象**；恰恰相反，**真有质量差时更锋利**，核心结论在最该看的高-gap 子集上最强（详见 [`06`](06-核心发现-FM损失与奖励错配.md) §3.6）。
 - **binomial**：82/188 **p = 0.093**（**不写 at chance**，亦不写显著）。
