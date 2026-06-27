@@ -23,7 +23,7 @@
 | `base` | `rednote-hilab/dots.tts-base`（不动） | 下界基线 |
 | `sft` | 仅用 reward-winners 继续 SFT | 原设为「控制变量」；**实测崩坏**（反转，见 §6） |
 | `open_soar` | reward-free 自校正（训向真实 clean 音频=on-manifold） | **唯一改善臂** |
-| `dpo_multiobj` | DPO，奖励 = WER+SIM+UTMOS | 原「头条方法」；**实测灾难崩坏 + 25% 发散** |
+| `dpo_multiobj` | DPO，奖励 = WER+SIM+UTMOS | 原「头条方法」；**实测灾难崩坏 + 25% 生成失败** |
 | `dpo_weronly` | DPO，奖励 = 仅 WER | 原「reward-hacking 对照」；**实测 ≈base、WER-only 未取最低 WER** |
 
 **第二轮（脚手架已建，结果待出；意义见 [`docs/09`](docs/09-第二轮实验程序.md)）**
@@ -84,7 +84,7 @@
 
 - **单调崩坏序**：拉向 on-manifold（open_soar，改善）→ 弱拉 reward-winner（dpo_weronly，≈base）→ 强拉 reward-winner（sft，崩）→ 最强拉 + 反向梯度（dpo_multiobj，灾难）。
 - **机理**：头条 Spearman **ρ=−0.187**；偏相关 **−0.392**（控住全部生成 knob 后存活 → **intrinsic**）；per-component reward 对齐三轴全负 **(−WER)−0.41 / SIM −0.68 / UTMOS −0.60**（SIM/UTMOS 比 WER 强）。**`L_FM` 是有效似然代理**（open_soar 同损失训满分为证），失败在 **preference-likelihood 对齐（off-manifold winner）**=已知 likelihood-vs-quality/CFG gap。
-- **caveat**：`sft` 崩与小数据 SFT 不稳混淆（待 X4 隔离）；`dpo_multiobj` 25%=发散非 graded；失败聚集 `LJ002`；无人类听测。
+- **caveat**：`sft` 崩与小数据 SFT 不稳混淆（待 X4 隔离）；`dpo_multiobj` 25% 为生成时子集崩，graded-vs-divergence **证据不一**（X2/X3：训练未发散、合判生成时子集崩）；失败聚于 `LJ002` 须诚实归因（评测集本身 89% 为 LJ002、组内 0/11 vs 25/89、仅轻微偏长 1.12×）；无人类听测。
 
 裁决全文见 [`docs/08-实验结果-Table1.md`](docs/08-实验结果-Table1.md)；机理见 [`docs/06-核心发现-FM损失与奖励错配.md`](docs/06-核心发现-FM损失与奖励错配.md)。
 

@@ -5,7 +5,7 @@
 > **定位（已重定位）**：本文**不是**「开源可用 DPO 配方」，而是一份**机理性警示研究 / 可证伪的负面结果**——在连续-latent flow-matching TTS 上，向 automatic-reward 选出的自生成 off-manifold winner 做 self-training 必退化（SFT/DPO 均然），唯 `open_soar` 改善；并给出反相关的机理诊断。统稿全文见 [`PAPER_DRAFT.md`](PAPER_DRAFT.md)。
 
 ## Abstract
-连续-latent AR TTS（dots.tts）证明了「无离散 token」也能 SOTA，但把**偏好对齐/自训练**直接搬上来是否安全，缺系统证据。我们做了一次受控诊断，得到一个**警示性负面结果**：在 dots.tts 上，向自动多目标奖励（WER+SIM+UTMOS）选出的**自生成 off-manifold winner** 做 self-training **会退化模型，且与训练目标无关**——纯 SFT 与 Diffusion-DPO-on-flow-matching 都崩，崩坏强度随「往 off-manifold 拉的强度」**单调加剧**（dpo_multiobj 灾难崩坏 + 25% 生成发散；sft 崩坏；dpo_weronly ≈base）；**唯独 reward-free、训向真实 on-manifold 目标的 open-SOAR 改善**（UTMOS 4.309→4.408、WER 0.103→0.093）。机理是 **flow-matching 似然与三个 perceptual reward 轴内在反相关**（头条 Spearman ρ=−0.187；偏相关 −0.392，控住全部生成 knob 后存活 → intrinsic；per-component 三轴全负 −0.41/−0.68/−0.60）。我们定性地把病因定到 **preference-likelihood 对齐**（off-manifold winner），而**非** `L_FM` 本身——open-SOAR 用同一损失训出最佳自然度即为证；这是已知 **likelihood-vs-quality / CFG gap** 在 TTS 偏好对齐上的具体体现。经典 reward-hacking 在错配的 DPO-FM 框架内**未复现**，改在非错配的 reward-weighted 回归框架内干净复现。
+连续-latent AR TTS（dots.tts）证明了「无离散 token」也能 SOTA，但把**偏好对齐/自训练**直接搬上来是否安全，缺系统证据。我们做了一次受控诊断，得到一个**警示性负面结果**：在 dots.tts 上，向自动多目标奖励（WER+SIM+UTMOS）选出的**自生成 off-manifold winner** 做 self-training **会退化模型，且与训练目标无关**——纯 SFT 与 Diffusion-DPO-on-flow-matching 都崩，崩坏强度随「往 off-manifold 拉的强度」**单调加剧**（dpo_multiobj 灾难崩坏 + 25% 生成失败（生成时子集崩，graded-vs-divergence 证据不一）；sft 崩坏；dpo_weronly ≈base）；**唯独 reward-free、训向真实 on-manifold 目标的 open-SOAR 改善**（UTMOS 4.309→4.408、WER 0.103→0.093）。机理是 **flow-matching 似然与三个 perceptual reward 轴内在反相关**（头条 Spearman ρ=−0.187；偏相关 −0.392，控住全部生成 knob 后存活 → intrinsic；per-component 三轴全负 −0.41/−0.68/−0.60）。我们定性地把病因定到 **preference-likelihood 对齐**（off-manifold winner），而**非** `L_FM` 本身——open-SOAR 用同一损失训出最佳自然度即为证；这是已知 **likelihood-vs-quality / CFG gap** 在 TTS 偏好对齐上的具体体现。经典 reward-hacking 在错配的 DPO-FM 框架内**未复现**，改在非错配的 reward-weighted 回归框架内干净复现。
 
 ## 1. Introduction
 - 背景：离散 vs 连续之争、dots.tts 的连续-AR、SOAR 未开源（引 `../../学习资料/05` §3.1/§3.13）。
@@ -35,8 +35,8 @@
 
 ## 6. Discussion / Limitations
 - **强假设守门**：`sft` 崩与小数据 SFT 过拟合/遗忘尚未干净分离（待 X4 SFT-target 对照隔离）；off-manifold 退化目前是强假设。
-- `dpo_multiobj` 25% 是 optimization divergence（immediate-EOS），与 graded（ρ=−0.187）不同质——区分 graded degradation vs optimization divergence。
-- 失败聚集 `LJ002` 块（非均匀崩坏）｜崩坏臂 CI 极大、单说话人 LJSpeech、**无人类听测（ABX/MOS）**→ 量级仅供方向，未做听测前不称 perceptual 退化｜自动奖励噪声｜SIM 在单说话人近 ceiling，−0.68 须标可能被少数对带动、UTMOS −0.60 较实。
+- `dpo_multiobj` 25% 是 immediate-EOS 的「生成时子集崩」，与 graded（ρ=−0.187）不同质——但 graded degradation vs optimization divergence **证据不一、暂不定论**（X2/X3：训练 `fm_w` 稳 ~0.74、未二次爆、margin 仍小 0.065 → 训练未发散；交叉表 34% vs 48% 偏 divergence；合判生成时子集崩），保守报告、待人工 TB-curve + 听测裁决。
+- 失败聚于 `LJ002` 块须诚实归因（评测集本身 89% 为 LJ002、组内 LJ001 0/11 vs LJ002 25/89、仅轻微偏长 1.12×、无位置偏置；非均匀、非「长 prompt 触发」）｜崩坏臂 CI 极大、单说话人 LJSpeech、**无人类听测（ABX/MOS）**→ 量级仅供方向，未做听测前不称 perceptual 退化｜自动奖励噪声｜SIM 在单说话人近 ceiling，−0.68 须标可能被少数对带动、UTMOS −0.60 较实。
 - **Phase B（少步蒸馏 + 量化进 8GB）降为远期 future work**：以「Phase A 出可部署配方」为前提，而 Phase A 是警示性负面结果，故不在本文范围；开放问题「对齐/自校正能否在蒸馏后存活」留作 future work。
 
 ## 7. Reproducibility
