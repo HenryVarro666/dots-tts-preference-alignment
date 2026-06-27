@@ -12,8 +12,12 @@ losses_dpo.py — 核心①：把 DPO 适配到连续-latent flow-matching（Dif
 为什么这么设计（关键）:
     连续-latent AR 无离散 token 的 log-prob；借鉴 Diffusion-DPO(Wallace 2023)，
     用 flow-matching 训练损失当 −log p 的代理。详见 docs/01-METHOD.md。
-    正确性命门：policy/ref/win/lose 四次前向**共享同一 (x0,t,VAE-z)**
-    （在 train_dots_tts_dpo.py 用 fork_rng + 同一 RNG 状态保证）。
+    正确性命门：四次前向共享同一 (x0,t,VAE-z) 以抵消采样噪声——但分两档强度：
+    对**同-shape 的 policy/ref 对**是**精确**共享（check_fm_loss.py [2] 已验：同输入同 RNG ⇒ fm_loss 逐元素一致），
+    这是 DPO 似然比可比的硬前提；对**异长的 win/lose 对**只是 common-random-numbers 式
+    **近似但无偏**的方差缩减——异长令 RNG 流消费错位、不保证逐元素同 (x0,t)，
+    但不改 E[L_lose−L_win] 的无偏性、仅降配对效率。
+    （两档均在 train_dots_tts_dpo.py 用 fork_rng + 同一 RNG 状态实现。）
 
 ⚠️ 本机只语法检查（py_compile 不执行 import torch）。
 """
@@ -56,8 +60,9 @@ def dpo_loss(
 ) -> DpoStats:
     """Diffusion-DPO over flow-matching velocity loss（输入为 per-sample L_FM 标量 (B,)）。
 
-    注意: fm_*_w / fm_*_l 必须在共享 (x0,t,VAE-z) 下计算（见 train_dots_tts_dpo._fm_per_sample），
-    否则 policy 与 ref 的 L_FM 不可比，DPO 似然比失效。
+    注意: 每一对的 policy 与 ref 必须在**精确共享**的 (x0,t,VAE-z) 下计算（同-shape，见 train_dots_tts_dpo._fm_per_sample），
+    否则二者 L_FM 不可比、DPO 似然比失效——这是硬正确性前提。win/lose 两对间也复用同一 RNG 起点，
+    但因两者异长属 common-random-numbers 近似（无偏、只缩方差），并非可比性前提。
     """
     # Δ = L_FM^ref − L_FM^policy（策略把损失降得越多，似然提升越大）
     delta_w = fm_ref_w - fm_pol_w

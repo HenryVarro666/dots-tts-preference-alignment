@@ -16,6 +16,9 @@ aggregate_results.py — 阶段⑨：汇总所有 run 的指标 → 主表/流�
     这些样本不进 WER(无音频可转写)，只看 WER 会**漏掉 active degradation**——失败率把它显式化。
 对实验意义:
     主表回答 RQ1；流式表回答 RQ2；reward-hacking 表回答 RQ3——三表即论文核心结果。
+    多重比较校正(Part B5): 对各表「各臂 vs base」差异族加 FDR/Bonferroni 校正标记——
+    **消融网格(本三表 >100 个 臂×指标 对照)才是多重比较校正的正场**；probe 的偏相关是
+    单一预设确证终点(single pre-registered endpoint)，不进此校正族。
 
 前置条件: run_matrix 跑完、各评测产物落地。
 预期结果: results/out/{master.csv, main_table.md, streaming_table.md, reward_hacking.md}。
@@ -27,6 +30,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import math
 import re
 import sys
 from pathlib import Path
@@ -124,6 +128,72 @@ def _md_table(headers: list[str], rows: list[list]) -> str:
     return "\n".join(out) + "\n"
 
 
+# —— Part B5：消融网格的多重比较校正（reviewers 实指的 FDR 正场）——
+# 做什么:    对「各臂 vs base」×{WER,SIM,UTMOS} 这一显著性族，按 Bonferroni / Benjamini-Hochberg(FDR)
+#            标注哪些差异在多重比较校正后仍成立；**只增标记列，不改任何已存 CI/指标数字**。
+# 为什么:    >100-CI 的消融网格才是多重比较校正的正场——成百个「臂×指标 vs base」对照同族检验、
+#            不校正会虚报显著；而 probe 的偏相关是单一预设确证终点(single pre-registered endpoint)，不在此族。
+_Z95 = 1.959963984540054  # 双尾 95% 正态分位数：从 bootstrap 95% CI 反解 SE 用
+
+
+def _norm_cdf(z: float) -> float:
+    return 0.5 * (1.0 + math.erf(z / math.sqrt(2.0)))
+
+
+def _approx_p_vs_base(point, ci, base_value):
+    """近似「该臂某指标 ≠ base」的双尾 p。
+
+    为什么近似: master 只存了 95% bootstrap CI、没存 bootstrap 重抽样，无法在更严的 Bonferroni α
+    上精确重算 CI；故按高斯/Wald 把 95% CI 反解出 SE——取「朝向 base 一侧」的半宽(对非对称
+    percentile CI 更忠实地对应『CI 是否排除 base』)。这是偏保守的近似、非精确重算(精确版需重跑
+    bootstrap)。缺 point/ci/base 或 SE≤0 → 返回 None（不入校正族）。
+    """
+    if point is None or base_value is None or not isinstance(ci, (list, tuple)) or len(ci) != 2:
+        return None
+    lo, hi = ci
+    if lo is None or hi is None:
+        return None
+    diff = point - base_value
+    if diff == 0:
+        return 1.0
+    half = (point - lo) if diff > 0 else (hi - point)  # base 落在 point 的哪一侧 → 取该侧半宽
+    se = half / _Z95
+    if se <= 0:
+        return None
+    z = abs(diff) / se
+    return 2.0 * (1.0 - _norm_cdf(z))
+
+
+def _benjamini_hochberg(pvals: dict, q: float = 0.05) -> set:
+    """BH(FDR) step-up：返回在 FDR=q 下显著的 key 集合。pvals: {key: p}（已剔 None）。"""
+    items = sorted(pvals.items(), key=lambda kv: kv[1])
+    m = len(items)
+    cut = 0
+    for i, (_k, p) in enumerate(items, start=1):
+        if p <= (i / m) * q:
+            cut = i  # 最大的 rank 满足 p<=(i/m)q → 其下全显著（step-up）
+    return {items[i][0] for i in range(cut)}
+
+
+def _mc_cell(levels: dict) -> str:
+    """主表「vs base 校正」单元：列出校正后仍显著的指标。†=Bonferroni(最严)、*=FDR、无=不显著。"""
+    if levels.get("wer") == "base":
+        return "—(参照)"
+    name = {"wer": "WER", "sim": "SIM", "utmos": "UTMOS"}
+    marks, tested = [], False
+    for mk in ("wer", "sim", "utmos"):
+        lvl = levels.get(mk, "")
+        if lvl in ("bonf", "fdr", "ns"):
+            tested = True
+        if lvl == "bonf":
+            marks.append(name[mk] + "†")
+        elif lvl == "fdr":
+            marks.append(name[mk] + "*")
+    if not tested:
+        return "(无CI)"
+    return ", ".join(marks) if marks else "无"
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description="结果汇总")
     ap.add_argument("--ledger", default=str(PATHS.project_root / "ablation" / "ledger.jsonl"))
@@ -161,6 +231,44 @@ def main() -> None:
             "ckpt": ckpt,  # 溯源（ledger 外的臂无 ckpt → 标 '(ledger 外)'）
         })
 
+    # —— Part B5：消融网格多重比较校正（FDR/Bonferroni）——
+    # 族 = 「各臂 vs base」×{WER,SIM,UTMOS}；base 行作参照、不入族。标记写回 master.csv + 主表新列。
+    base_row = next((r for r in master_rows if r["treatment"] == "base"), None)
+    metric_keys = [("wer", "wer_ci"), ("sim", "sim_ci"), ("utmos", "utmos_ci")]
+    base_vals = {mk: (base_row.get(mk) if base_row else None) for mk, _ in metric_keys}
+    pfamily: dict[tuple[str, str], float] = {}
+    for r in master_rows:
+        if base_row is None or r is base_row:
+            continue
+        for mk, ck in metric_keys:
+            p = _approx_p_vs_base(r.get(mk), r.get(ck), base_vals.get(mk))
+            if p is not None:
+                pfamily[(r["tag"], mk)] = p
+    m_family = len(pfamily)                                # = 参与校正的(臂,指标)对数（齐全时=非base臂数×3）
+    bonf_alpha = (0.05 / m_family) if m_family else None   # Bonferroni 单比较阈
+    bh_sig = _benjamini_hochberg(pfamily) if m_family else set()
+    mc_by_tag: dict[str, dict[str, str]] = {}              # tag -> {metric: 校正等级} 供建表
+    for r in master_rows:
+        is_base = base_row is not None and r is base_row
+        levels: dict[str, str] = {}
+        for mk, _ck in metric_keys:
+            p = pfamily.get((r["tag"], mk))
+            if is_base:
+                lvl = "base"
+            elif p is None:
+                lvl = ""                                   # 该臂缺 CI、未入族
+            elif bonf_alpha is not None and p < bonf_alpha:
+                lvl = "bonf"                               # 过最严的 Bonferroni
+            elif (r["tag"], mk) in bh_sig:
+                lvl = "fdr"                                # 仅过 BH-FDR
+            else:
+                lvl = "ns"                                 # 校正后不显著
+            r[f"{mk}_p_vs_base"] = (round(p, 6) if p is not None else None)
+            r[f"{mk}_adj"] = lvl
+            levels[mk] = lvl
+        r["mc_family_m"] = m_family
+        mc_by_tag[r["tag"]] = levels
+
     RESULTS.mkdir(parents=True, exist_ok=True)
     if master_rows:
         flat = [{k: (v if not isinstance(v, (list, tuple)) else json.dumps(v)) for k, v in r.items()}
@@ -172,17 +280,25 @@ def main() -> None:
     # Table 1 主表（离线，带 CI）。新增「失败率↓」列：与 WER 同源(同一离线合成)、互补维度——
     # WER 只覆盖产出了 wav 的样本，失败率覆盖根本没产出的样本，两者并列才看得到崩坏臂全貌。
     main_tbl = _md_table(
-        ["treatment", "NFE", "n", "WER↓", "SIM↑", "UTMOS↑", "EmergentTTS↑", "失败率↓"],
+        ["treatment", "NFE", "n", "WER↓", "SIM↑", "UTMOS↑", "EmergentTTS↑", "失败率↓", "vs base 校正"],
         [[r["treatment"], r["nfe"], r["n"], _fmt(r["wer"], r["wer_ci"]),
           _fmt(r["sim"], r["sim_ci"]), _fmt(r["utmos"], r["utmos_ci"], 3),
           _fmt(r["emergent_overall"], None, 3),
-          _fmt_pct(r["failure_rate"], r["n_failed"], r["n_total"])] for r in master_rows])
+          _fmt_pct(r["failure_rate"], r["n_failed"], r["n_total"]),
+          _mc_cell(mc_by_tag[r["tag"]])] for r in master_rows])
     (RESULTS / "main_table.md").write_text(
         "# Table 1 主表（离线；[..]为 bootstrap 95% CI）\n\n" + main_tbl +
         "\n> 小样本评测请以 CI 重叠与否判断显著性，勿只看均值。\n"
         "> 失败率↓ = 生成崩坏占比(n_failed/n_total，来自各臂 inference/out/<tag>/_synthesis_report.json)；"
         "空=未跑或旧账本无 offline_dir。**须与 WER 并读**——崩坏臂(如 dpo_multiobj)对部分 prompt 立即 EOS "
-        "产不出 wav，这些样本不进 WER，单看 WER 会漏判 active degradation。\n", encoding="utf-8")
+        "产不出 wav，这些样本不进 WER，单看 WER 会漏判 active degradation。\n" +
+        f"> vs base 校正列：对「各臂 vs base」×{{WER,SIM,UTMOS}} 显著性族做多重比较校正（m={m_family}"
+        "=参与校正的(臂,指标)对数，三指标齐全时=非 base 臂数×3）。"
+        "†=Bonferroni(α/m，最严)仍排除 base；*=Benjamini-Hochberg FDR(q=0.05)仍显著；"
+        "无=校正后不显著；(无CI)=该臂缺 CI 未入族；—(参照)=base。"
+        "p 由所存 95% bootstrap CI 朝 base 一侧高斯/Wald 反解近似（精确重算需 bootstrap 重抽样，本列偏保守、非精确）。\n"
+        "> **消融网格(本三表 >100 个 臂×指标 对照)才是多重比较校正的正场**；"
+        "probe 的偏相关是单一预设确证终点(single pre-registered endpoint)，不进此 FDR 族。\n", encoding="utf-8")
 
     # Table 2 流式表
     st_tbl = _md_table(
@@ -195,13 +311,15 @@ def main() -> None:
     # Table 3 reward-hacking 对照
     hack_rows = [r for r in master_rows if r["treatment"] in ("dpo_multiobj", "dpo_weronly", "base")]
     hack_tbl = _md_table(
-        ["treatment", "WER↓", "UTMOS↑", "EmergentTTS↑"],
+        ["treatment", "WER↓", "UTMOS↑", "EmergentTTS↑", "vs base 校正"],
         [[r["treatment"], _fmt(r["wer"], r["wer_ci"]), _fmt(r["utmos"], r["utmos_ci"], 3),
-          _fmt(r["emergent_overall"], None, 3)] for r in hack_rows])
+          _fmt(r["emergent_overall"], None, 3), _mc_cell(mc_by_tag[r["tag"]])] for r in hack_rows])
     (RESULTS / "reward_hacking.md").write_text(
         "# Table 3 reward hacking 对照\n\n" + hack_tbl +
         "\n> 判读(PROTOCOL §6)：dpo_weronly 若 **WER 最低但 UTMOS/EmergentTTS 退化** = 复现 reward hacking；"
-        "若仅WER未伤自然度→多目标前提不成立，如实报告。\n", encoding="utf-8")
+        "若仅WER未伤自然度→多目标前提不成立，如实报告。\n"
+        "> vs base 校正：标记取自**全消融网格**的多重比较族(同 main_table，†=Bonferroni/*=FDR/无=校正后不显著)，"
+        "非本子表内重算——FDR 族是整张消融网格、非这 3 行。\n", encoding="utf-8")
 
     print(f"✓ 汇总 {len(master_rows)} 个 run -> results/out/{{master.csv, main_table.md, streaming_table.md, reward_hacking.md}}")
 
