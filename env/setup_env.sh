@@ -52,7 +52,7 @@ python -m pip install --upgrade pip wheel
 echo "[2/6] 以可编辑模式安装 dots.tts (为什么: 我们要 import 其 model/runtime/training 内部模块)"
 pip install -e "${DOTS_TTS}"
 
-echo "[3/6] 安装本实验增量依赖 (jiwer/peft/deepspeed ...; UTMOS 走 torch.hub)"
+echo "[3/6] 安装本实验增量依赖 (jiwer/peft/deepspeed/tensorboard ...; UTMOS 走 torch.hub)"
 pip install -e "${PROJECT_ROOT}"
 
 echo "[4/6] 安装 seed-tts-eval 依赖 (WER 用 funasr/Paraformer, SIM 用 WavLM)"
