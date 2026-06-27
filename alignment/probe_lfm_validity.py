@@ -348,7 +348,7 @@ def main() -> None:
             print("▶ 真实录音 L_FM **系统性低于** reward-winner（diff>0、CI 排除 0）：")
             print("  模型自身似然把真实 on-manifold 音频判为更典型、把 reward-winner 判为更 off-manifold。")
             print("  → 给「L_FM 是似然启发代理」一条**不依赖 open-SOAR 饱和**的独立支撑 = 关掉 C2；")
-            print("    与「结构化显著反相关本身」(Spearman −0.187 / partial −0.392 + per-component 三轴) 互证 L_FM 非退化。")
+            print("    与「结构化显著反相关本身」(settings-matched Spearman −0.216 + per-component 三轴反向) 互证 L_FM 非退化。")
             print("  （caveat 保留：L_FM 仍是似然启发代理、非忠实 NLL 上界；精确 NLL 见子协议 (a)〔需核实〕。）")
         elif sig and mean_diff < 0:
             print("▶ 真实录音 L_FM **反而高于** winner（diff<0、CI 排除 0）：与典型性预期相反——")
