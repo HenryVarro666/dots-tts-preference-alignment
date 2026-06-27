@@ -22,6 +22,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from common import PATHS, read_jsonl, write_jsonl  # noqa: E402
 from utmos_backend import UtmosScorer  # noqa: E402
 
+# 进度可视化（UTMOS 模型很轻，但逐条 librosa.load 在上千条时也要十几秒~分钟级，给条进度条）。
+try:
+    from tqdm import tqdm  # noqa: E402
+except Exception:  # pragma: no cover
+    def tqdm(it, **_):  # type: ignore
+        return it
+
 
 def main() -> None:
     ap = argparse.ArgumentParser(description="候选 UTMOS 打分")
@@ -29,8 +36,9 @@ def main() -> None:
     args = ap.parse_args()
 
     scorer = UtmosScorer()
+    cands = list(read_jsonl(args.candidates))  # 物化以便 tqdm 知道总数、显示百分比/ETA
     rows = []
-    for c in read_jsonl(args.candidates):
+    for c in tqdm(cands, desc="UTMOS", unit="clip"):
         rows.append({"fid": c["fid"], "k": c["k"], "utmos": scorer.score(c["audio"])})
     n = write_jsonl(PATHS.rewards_dir / "utmos.jsonl", rows)
     print(f"✓ UTMOS 打分 {n} 条 -> reward/out/utmos.jsonl")
