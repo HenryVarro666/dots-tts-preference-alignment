@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import json
 import sys
 from pathlib import Path
 
@@ -130,7 +131,9 @@ def main() -> None:
         rows_out.append({"fid": fid, "win_audio": r["win_audio"], "lose_audio": r["lose_audio"],
                          "reward_win": float(r["reward_win"]), "reward_lose": float(r["reward_lose"]),
                          "reward_gap": reward_gaps[-1], "single_margin": per_draw[0],
-                         "mc_margin": mc, "win_rate": win_rates[-1], "k": args.k})
+                         "mc_margin": mc, "win_rate": win_rates[-1], "k": args.k,
+                         # B6 钩子：完整 K 个 draw 的 margin list，供 probe_analysis.py 做 split-half/解衰减；新增尾列、不破坏现有读者
+                         "per_draw_json": json.dumps(per_draw)})
         print(f"  [{idx:2d}] reward_gap={reward_gaps[-1]:+.3f}  "
               f"FM_margin: single={per_draw[0]:+.4f}  MC(K={args.k})={mc:+.4f}  "
               f"win_rate={win_rates[-1]:.2f}")

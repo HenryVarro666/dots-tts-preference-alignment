@@ -8,10 +8,11 @@ train_dots_tts_dpo.py — 核心②：连续-AR 偏好对齐训练（DPO over fl
     - 复用 dots.tts: `DotsTtsModel.from_pretrained`、`prepare_training_batch`、`model(batch)→LossTerms`，
       Accelerate 训练编排（仿 scripts/train_dots_tts.py 的 step 结构）。
     - per-sample L_FM 直接取自 `loss_terms["fm_loss"]`（不碰 DiT 内部）。
-    - 仅新增: 冻结 ref（或 LoRA disable_adapter）、paired 前向、**共享 (x0,t,VAE-z)**、DPO 损失 + anchor SFT。
+    - 仅新增: 冻结 ref（或 LoRA disable_adapter）、paired 前向、**共享 RNG**（policy/ref 对精确、win/lose 对近似无偏）、DPO 损失 + anchor SFT。
 为什么这么设计:
     dots.tts 已自带完整训练栈，A 不是重写模型，而是「加损失 + 配对数据 + ref」。
-    最高风险点 = policy/ref/win/lose 的 FM 前向必须共享同一随机状态（见 _fm_per_sample 的 fork_rng）。
+    最高风险点 = 每一对的 policy 与 ref 必须在**精确**同随机状态下前向（同-shape，check_fm_loss 已验），
+    这是 L_FM 可比的硬前提；win/lose 两对间复用同一 RNG 起点则只是 common-random-numbers 近似（异长、无偏、只缩方差）。见 _fm_per_sample 的 fork_rng。
 对实验意义:
     产出所有 treatment(dpo_multiobj / dpo_weronly / ...) 的引擎；配置切换即不同实验臂。
 
@@ -114,7 +115,8 @@ class DpoTrainer:
         命门细节：`_fm_per_sample` 在 `fork_rng` 内跑，退出时把全局 RNG 恢复到进入前——
         所以一个 train_step 结束后全局 RNG 不变；而 DataLoader 只在每个 epoch 开头推进一次 RNG。
         若不在此手动推进，则**同一 epoch 内所有 step 共用同一噪声**（DPO 退化为对单噪声过拟合）。
-        在 capture 之前推进一次 → 步间噪声不同；步内 rng_w==rng_l 仍保证 policy/ref/win/lose 四前向共享同一 (x0,t,z)。"""
+        在 capture 之前推进一次 → 步间噪声不同；步内 rng_w==rng_l：对同-shape 的 policy/ref 对**精确**共享 (x0,t,z)，
+        对异长的 win/lose 对则是 common-random-numbers 近似（无偏、只缩方差，不改 E[L_lose−L_win]）。"""
         torch.rand(1)
         if torch.cuda.is_available():
             torch.rand(1, device=self.accel.device)
@@ -128,7 +130,8 @@ class DpoTrainer:
         """在固定 RNG 状态下前向，返回 (fm (B,), 可选 (ce_term, eos_term))。
 
         为什么 fork_rng + set_state: dots.tts 在 model() 内部采样 (x0 噪声, 时间步 t, VAE z)。
-        policy 与 ref、win 内部要可比，必须复用同一随机状态 → 同输入同 RNG ⇒ 同 (x0,t,z)。
+        同一对的 policy 与 ref 是**同输入(同-shape)**，复用同一 RNG ⇒ 精确同 (x0,t,z)、L_FM 可比（check_fm_loss 已验）；
+        win 与 lose 异长，复用同一 RNG 起点只是 common-random-numbers 式方差缩减（无偏，不保证逐元素同 (x0,t)）。
         """
         cpu_state, cuda_state = rng
         devices = [self.accel.device] if cuda_state is not None else []
@@ -158,8 +161,8 @@ class DpoTrainer:
         lose = _to_device(lose, self.accel.device)
 
         self._advance_global_rng()    # 每步推进，使各步噪声不同（否则同 epoch 内共用一个噪声）
-        rng_w = self._capture_rng()   # win 这一对（policy/ref）共享的状态
-        rng_l = self._capture_rng()   # lose 这一对共享的状态（与 win 同起点，按 Diffusion-DPO 共享 (x0,t)）
+        rng_w = self._capture_rng()   # win 这一对（policy/ref，同-shape）精确共享的状态
+        rng_l = self._capture_rng()   # lose 这一对精确共享；与 win 同起点是 common-random-numbers 近似（异长、无偏、只缩方差，按 Diffusion-DPO 共享 (x0,t)）
 
         fm_pol_w, ce_w, eos_w = self._fm_per_sample(self.policy, win, rng_w, grad=True, want_sft=True)
         fm_ref_w = self._ref_forward(win, rng_w)

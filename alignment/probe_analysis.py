@@ -25,6 +25,13 @@ probe_analysis.py — 第一轮审稿后的统计加固：把 reviewer 最狠的
       (7) **X1 按 reward_gap 分层**：按 |reward_gap| 的中位数 / 上四分位把 pair 分层，在 **高-gap(非平局)子集**
           上复用 _pearson/_spearman/_boot_ci 重算 Pearson/Spearman + 95%CI，并与全集对比——回应审稿
           「win_rate 0.47 大半是 near-tie」：若子集系数仍显著且 |系数| ≥ 全集，则反相关非 near-tie 产物。
+      (8) **审稿加固附加项**（B 组，全部走 _emit→--out 归档；本机只语法检查、真实运行在有数据的 GPU 服务器）：
+          B1 partial **Spearman**（秩偏相关：对 y/x/各 Z 列先 _rank 再复用 _partial_pearson 的 OLS 残差化）与
+             partial Pearson 并排——同符号同显著即化解「Spearman 头条 vs Pearson 偏相关」张力，秩偏相关对非线性更稳；
+          B2 对决定性 partial r 加 **Bonferroni/Holm**（相关族 m≈14、α=0.05/m）重算更严 CI，判是否过校正；
+          B3 对 **SIM_gap** 复用头条同款 trim-top-5%+LOO 杠杆诊断，据 trim 后是否仍显著定「保留 / 退役为带 hedge 次要佐证」；
+          B4 在偏相关 Z 里加 **num_steps²**（NFE 非线性项）复跑一次，与线性设定对比（决定性关闸仍是 X5 settings-matched）；
+          B6 若 CSV 含 per_draw_json：**split-half 可靠性 r_hh + 解衰减 ρ_dis=ρ/√r_hh**（测量噪声下报告 ρ 的保守下界量级）。
 怎么用:
     python alignment/probe_analysis.py \
         --csv alignment/out/probe_per_pair.csv \
@@ -39,6 +46,9 @@ probe_analysis.py — 第一轮审稿后的统计加固：把 reviewer 最狠的
 对实验意义（裁决"intrinsic"）:
     • 若偏相关仍显著（CI 排除 0）→ 反相关在控住生成设置后仍存活 → "intrinsic" 站得住；
     • 若偏相关塌到不显著 → 反相关（部分）由生成设置驱动 → §6.7 必须从"intrinsic"降级为"under-powered/grid effect"。
+    • LINEAR caveat：偏相关用**线性 OLS 残差化**，只剔除 {guidance,num_steps,speaker} 的线性投影；num_steps(NFE)
+      可能非线性作用于 velocity-MSE，故偏相关的 intrinsic 裁决「以线性设定为条件」——B4 加 NFE² 是一阶非线性探查，
+      消线性+非线性+交互的**决定性非参关闸是 X5 settings-matched**（setting_gap≡0，本脚本只做线性条件下的稳健性）。
 本机只语法检查；真实运行在有 CSV+index 的服务器上。
 """
 
@@ -133,7 +143,19 @@ def _partial_pearson(y, x, Z) -> float:
     return _pearson(ry, rx)
 
 
-def _boot_ci(fn, arrays, B=3000, seed=20260626):
+def _partial_spearman(y, x, Z) -> float:
+    """秩偏相关：把 y/x/各 Z 列先 _rank 再复用 _partial_pearson 的同款 OLS 残差化（残差化后 _pearson）。
+    与 partial Pearson 并排可化解「Spearman 头条 vs Pearson 偏相关」张力，且对(单调)非线性更稳。"""
+    Z = np.asarray(Z, float)
+    if Z.ndim == 1:
+        Z = Z[:, None]
+    Zr = np.column_stack([_rank(Z[:, j]) for j in range(Z.shape[1])])
+    return _partial_pearson(_rank(y), _rank(x), Zr)
+
+
+def _boot_ci(fn, arrays, B=3000, seed=20260626, alpha=0.05):
+    """bootstrap CI。默认 alpha=0.05→分位[2.5,97.5]（与改前完全一致）；传更小 alpha 即做
+    Bonferroni/Holm 家族校正后的更严 CI（B2：α=0.05/14→更宽分位、更难显著，z 1.96→2.91）。"""
     rng = np.random.default_rng(seed)
     n = len(arrays[0])
     stats = []
@@ -142,7 +164,7 @@ def _boot_ci(fn, arrays, B=3000, seed=20260626):
         v = fn(*[np.asarray(a)[idx] for a in arrays])
         if v == v:  # 排除 NaN
             stats.append(v)
-    lo, hi = np.percentile(stats, [2.5, 97.5])
+    lo, hi = np.percentile(stats, [100 * alpha / 2, 100 * (1 - alpha / 2)])
     return float(lo), float(hi)
 
 
@@ -280,11 +302,51 @@ def main() -> None:
         pp_ci = _boot_ci(lambda a, b, *Z: _partial_pearson(a, b, np.column_stack(Z)),
                          (m_ok, r_ok, *[G[:, j] for j in range(G.shape[1])]))
         _emit("[C1/C5 偏相关（裁决 intrinsic）] corr(FM_margin, reward_gap | guidance,num_steps,speaker):")
-        _emit(f"  partial r={pp:+.3f}  95%CI[{pp_ci[0]:+.3f},{pp_ci[1]:+.3f}]  {_sig(*pp_ci)}")
+        _emit(f"  partial Pearson  r={pp:+.3f}  95%CI[{pp_ci[0]:+.3f},{pp_ci[1]:+.3f}]  {_sig(*pp_ci)}")
+
+        # ---- (B1) partial Spearman：秩偏相关，与 partial Pearson 并排，化解头条 vs 偏相关 的统计张力 ----
+        psp = _partial_spearman(m_ok, r_ok, G)
+        psp_ci = _boot_ci(lambda a, b, *Z: _partial_spearman(a, b, np.column_stack(Z)),
+                          (m_ok, r_ok, *[G[:, j] for j in range(G.shape[1])]))
+        same_sign = (pp < 0) == (psp < 0)
+        same_sig = _sig(*pp_ci) == _sig(*psp_ci)
+        _emit(f"  partial Spearman ρ={psp:+.3f}  95%CI[{psp_ci[0]:+.3f},{psp_ci[1]:+.3f}]  {_sig(*psp_ci)}")
+        _emit(f"  → partial Pearson 与 partial Spearman {'同符号' if same_sign else '异符号'}、"
+              f"{'同显著' if same_sig else '显著性不一致'}"
+              f"{'：化解『Spearman 头条 vs Pearson 偏相关』张力，且秩偏相关对(单调)非线性更稳' if same_sign and same_sig else '：§6.7 需并报两者并解释差异'}")
+
+        # ---- (B2) Bonferroni/Holm：对相关族(m≈14)用 α=0.05/m 重算决定性 partial r 的更严 CI ----
+        # 为什么：偏相关是唯一「预设确证终点」；审稿要 FDR/Bonferroni 的合法对象本是 >100 条的消融网格，
+        #   但把决定性 partial r 也过一遍最严校正、上界仍 <0，才彻底堵住「多重比较」的口（z 1.96→2.91）。
+        M_FAM = 14  # 相关族近似条目数
+        # α=0.05/14 把分位推到 [0.179, 99.821]%，默认 B=3000 时每侧仅 ~5 个 bootstrap 样本支撑端点、
+        #   方差极大；这条是决定性裁决，故单独把 B 调大(20000)让校正后 CI 端点稳定（仅此一调用，秒级）。
+        pp_ci_bonf = _boot_ci(lambda a, b, *Z: _partial_pearson(a, b, np.column_stack(Z)),
+                              (m_ok, r_ok, *[G[:, j] for j in range(G.shape[1])]),
+                              alpha=0.05 / M_FAM, B=20000)
+        bonf_pass = pp_ci_bonf[0] > 0 or pp_ci_bonf[1] < 0
+        _emit(f"  Bonferroni/{M_FAM}(α={0.05 / M_FAM:.4f}, {100 * (1 - 0.05 / M_FAM):.2f}%CI)"
+              f"[{pp_ci_bonf[0]:+.3f},{pp_ci_bonf[1]:+.3f}] → "
+              f"{f'partial r 过 Bonferroni/{M_FAM} 校正(CI 上界<0)' if bonf_pass else f'未过 Bonferroni/{M_FAM} 校正(CI 含 0)'}")
+
         tost_pass = pp_ci[0] > -args.tost and pp_ci[1] < args.tost
         _emit(f"  原始 Pearson={_pearson(m_ok, r_ok):+.3f} → 控住设置后 {pp:+.3f}"
               f"（{'基本不变 → 反相关 intrinsic 站得住' if abs(pp) > 0.8*abs(_pearson(m_ok,r_ok)) else '明显减弱 → 部分由生成设置驱动，intrinsic 需降级'}）")
-        _emit(f"  TOST(|ρ|<{args.tost}): {'通过=可忽略' if tost_pass else '不通过'}\n")
+        _emit(f"  TOST(|ρ|<{args.tost}): {'通过=可忽略' if tost_pass else '不通过'}")
+
+        # ---- (B4) 非线性(NFE²)设定：把 num_steps 的二次项并入 Z 复跑偏相关 ----
+        # 为什么：偏相关只做线性 OLS 残差化、只剔 num_steps 的线性投影；NFE 可能非线性作用于 velocity-MSE。
+        #   加 num_steps² 吸收一阶非线性、看 intrinsic 偏相关是否仍存活。注：消线性+非线性+交互的决定性
+        #   关闸是 X5 settings-matched(setting_gap≡0)，本行只是「以非线性设定为条件」的稳健性探查。
+        nfe_idx = list(g).index("num_steps")
+        G_nl = np.column_stack([G, G[:, nfe_idx] ** 2])
+        pp_nl = _partial_pearson(m_ok, r_ok, G_nl)
+        pp_nl_ci = _boot_ci(lambda a, b, *Z: _partial_pearson(a, b, np.column_stack(Z)),
+                            (m_ok, r_ok, *[G_nl[:, j] for j in range(G_nl.shape[1])]))
+        nl_same = (pp < 0) == (pp_nl < 0) and _sig(*pp_ci) == _sig(*pp_nl_ci)
+        _emit(f"  非线性(NFE²)设定: partial r={pp_nl:+.3f} 95%CI[{pp_nl_ci[0]:+.3f},{pp_nl_ci[1]:+.3f}] {_sig(*pp_nl_ci)}"
+              f"（线性 {pp:+.3f} → 加 num_steps² 后 {pp_nl:+.3f}，{'方向/显著不变' if nl_same else '方向或显著性有变化'}）")
+        _emit("  注：偏相关 intrinsic 裁决以线性设定为条件；决定性的非参关闸是 X5 settings-matched(setting_gap≡0，消线性+非线性+交互)。\n")
     else:
         _emit(f"[C1] 设置-gap join 成功太少({int(ok.sum())}/{n})，跳过偏相关——检查 candidates_index 路径\n")
 
@@ -308,9 +370,65 @@ def main() -> None:
             for k in names:
                 c = _pearson(mc, np.array(cg[k])); ci = _boot_ci(_pearson, (mc, np.array(cg[k])))
                 _emit(f"  {k.upper():6s}_gap: r={c:+.3f}  95%CI[{ci[0]:+.3f},{ci[1]:+.3f}]  {_sig(*ci)}")
-            _emit("  （看反相关是不是只是 FM-vs-WER；告诉社区是『弃 FM-as-reward』还是『只修 reward 组成』）\n")
+            _emit("  （看反相关是不是只是 FM-vs-WER；告诉社区是『弃 FM-as-reward』还是『只修 reward 组成』）")
+
+            # ---- (B3 / SIM-HEDGE) SIM_gap 杠杆诊断：复用头条同款 trim-top-5% + LOO（杠杆块 207-216 同逻辑）----
+            # 为什么：SIM 来自单说话人 LJSpeech、近-ceiling、判别力弱，per-component 的 SIM_gap 反相关可能由
+            #   少数有真实 SIM 差的对(杠杆点)带动。复用头条同款 trim+LOO，看 trim 后是否仍显著，据此决定 SIM_gap
+            #   是承重证据、还是「带 hedge 的次要佐证」（承重放更具判别力的 UTMOS_gap、方向明确的 WER_gap）。
+            sg = np.array(cg["sim"])
+            if sg.std() > 0 and len(mc) >= 10:
+                sim_r = _pearson(mc, sg)
+                thr_s = np.percentile(np.abs(sg), 95)
+                keep_s = np.abs(sg) <= thr_s
+                sim_r_trim = _pearson(mc[keep_s], sg[keep_s])
+                sim_ci_trim = _boot_ci(_pearson, (mc[keep_s], sg[keep_s]))
+                loo_s = [abs(sim_r - _pearson(np.delete(mc, i), np.delete(sg, i))) for i in range(len(mc))]
+                imax_s = int(np.argmax(loo_s))
+                _emit("  [B3/SIM-HEDGE SIM_gap 杠杆诊断] 复用头条同款 trim-top-5% + LOO：")
+                _emit(f"    全集 SIM_gap r={sim_r:+.3f}；删 top-5% |SIM_gap|({int((~keep_s).sum())} 对)后 r={sim_r_trim:+.3f} "
+                      f"95%CI[{sim_ci_trim[0]:+.3f},{sim_ci_trim[1]:+.3f}] {_sig(*sim_ci_trim)}")
+                _emit(f"    留一法最大单点：删 #{imax_s} 使 SIM_gap r 变 {loo_s[imax_s]:+.3f}")
+                sim_trim_sig = sim_ci_trim[0] > 0 or sim_ci_trim[1] < 0
+                if sim_trim_sig and abs(sim_r_trim) >= 0.5 * abs(sim_r):
+                    _emit("    → trim 后仍显著且量级未塌：SIM_gap 反相关非少数杠杆点独撑，可作次要佐证保留")
+                else:
+                    _emit("    → trim 后塌/转不显著：单说话人 LJSpeech 近-ceiling、判别力弱的 SIM_gap 由少数杠杆对带动，"
+                          "退役为带 hedge 的次要佐证；承重证据放更具判别力的 UTMOS_gap 与方向明确的 WER_gap")
+            _emit()
     else:
         _emit("[per-component] rewards.jsonl 无 wer/sim/utmos 分量，跳过（如需：让 reward 阶段落盘分量）\n")
+
+    # ---- (B6 / ATTENUATION) split-half 可靠性 + 解衰减 ρ（若 CSV 含 per_draw_json）----
+    # 为什么：mc_margin 是 K=16 draw 的 MC 估计、含测量噪声；经典 regression dilution 只把 |相关| 往 0 衰减。
+    #   把每对逐 draw 序列分两半各 8、各求 mc，两半 mc 跨对相关=split-half 可靠性 r_hh（Spearman-Brown 拉全长 r_full）；
+    #   解衰减 ρ_dis=ρ/√r_full 给「报告 ρ 被噪声压低了多少」的量级——disattenuation 只增不减，故报告 ρ 是保守下界。
+    if "per_draw_json" in rows[0]:
+        halfA, halfB, n_ok_pd, n_half = [], [], 0, 0
+        for r in rows:
+            raw = r.get("per_draw_json")
+            try:
+                draws = json.loads(raw) if raw else None
+            except (json.JSONDecodeError, TypeError):
+                draws = None
+            if isinstance(draws, list) and len(draws) >= 2 and all(isinstance(v, (int, float)) for v in draws):
+                d = np.asarray(draws, float)
+                h = len(d) // 2
+                halfA.append(float(d[:h].mean())); halfB.append(float(d[h:2 * h].mean()))
+                n_ok_pd += 1; n_half = h
+        if n_ok_pd >= 10:
+            r_hh = _pearson(np.array(halfA), np.array(halfB))
+            r_full = (2 * r_hh) / (1 + r_hh) if r_hh == r_hh and r_hh > -1 else float("nan")
+            rho_dis = spear / np.sqrt(r_full) if r_full == r_full and r_full > 0 else float("nan")
+            _emit("[B6/ATTENUATION split-half 可靠性 + 解衰减] 用 per_draw_json 逐 draw 序列：")
+            _emit(f"  每对分两半各 {n_half} draw，跨对 split-half r_hh={r_hh:+.3f}；"
+                  f"Spearman-Brown 全长 r_full={r_full:+.3f}（可解析 n={n_ok_pd}）")
+            _emit(f"  头条 Spearman ρ={spear:+.3f} → 解衰减 ρ_dis=ρ/√r_full={rho_dis:+.3f}"
+                  f"（|ρ_dis|≥|ρ| ⇒ 报告 ρ 是被 K=16 测量噪声压低的保守下界，disattenuation 只增不减）\n")
+        else:
+            _emit(f"[B6 split-half] per_draw_json 可解析对太少({n_ok_pd})，跳过解衰减\n")
+    else:
+        _emit("[B6 split-half] CSV 无 per_draw_json 列，跳过（如需：让 probe_fm_reward.py 落逐 draw 序列）\n")
 
     _emit("==== 据此改 §6.7：偏相关存活→保留 intrinsic(但头条换 Spearman)；偏相关塌→改『under-powered/部分 grid 驱动』 ====")
 

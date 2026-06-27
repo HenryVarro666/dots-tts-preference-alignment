@@ -114,7 +114,7 @@
 
 ## 6. 全部 caveat（5 条，务必如实，须写进 PAPER §5/§6/§7）
 
-1. **`sft` 崩坏与「小数据 SFT 过拟合 / 灾难性遗忘」混淆**：188 单说话人 SFT 本就易过拟合 / 遗忘；干净判别需 **SFT-on-random-candidates vs SFT-on-reward-winners** 对照（future work）。`open_soar`（**同规模微调、同优化器族**）不崩是**部分对照**，指向「**目标分布（off-manifold winner）**」而非单纯「SFT 不稳」——但**未完全排除**，§3.1 新论点仍是强假设。
+1. **`sft` 崩坏与「小数据 SFT 过拟合 / 灾难性遗忘」混淆**：188 单说话人 SFT 本就易过拟合 / 遗忘；干净判别需 **SFT-on-random-candidates vs SFT-on-reward-winners** 对照（future work）。`open_soar`（**同规模微调、同优化器族**）不崩是**部分对照**，指向「**目标分布（off-manifold winner）**」而非单纯「SFT 不稳」——但**未完全排除**，§3.1 新论点仍是强假设。**另须显式点名跨臂步预算不对称**：`open_soar` 与两个 DPO 臂均 **600 步**、而 `sft` 为 **1500 步**（同规模 / 同优化器族**但步预算不同**），故「`open_soar` 安全 vs `sft` 崩」原则上仍可能被步数差混淆。该步差混淆由**步数匹配的 X4（`sft_groundtruth`@1500、on-manifold、同 SFT 目标、仅变 target 流形位置）**在跑出后关闸消除；佐证：`dpo_multiobj` **仅 600 步即灾难崩**、而唯一 1500 步的 `sft` 崩坏**居中**（§3 序③，介于 ②`dpo_weronly` 与 ④`dpo_multiobj` 之间）→ **步数与崩坏非单调**，反证步数非头条驱动。
 2. **`dpo_multiobj` 的 25% 失败是 immediate-EOS / no-payload 的「生成时子集崩」**，与 graded（Spearman −0.187）**不同质**；崩坏量级超出弱单调相关的预测。但**「graded vs optimization divergence」证据不一**：X2/X3 训练曲线 `fm_w` 全程稳 ~0.74、**未二次爆**、margin 仍小 0.065 → **训练未发散**（非 run0 式训练时爆炸）；交叉表大-gap 对 FM-reward 更脱钩（34% vs 48%）→ **偏 divergence**。**合判 = 训练温和但模型已 off-manifold 漂移 → 部分 prompt 生成时崩**；**保守报告，不径直断言 optimization divergence**，待人工 TB-curve + 失败句听测裁决。这**强化 off-manifold 论点**：错向梯度不靠炸训练指标（`fm_w` 未再爆、margin 仍小）、而是悄悄把模型推离流形。
 3. **失败聚于 `LJ002` 子集**（`sft`、`dpo_multiobj` 皆然）须**诚实归因**：评测集（`eval_big` 取前 100 held-out）**本身 89% 为 LJ002**（89/100），故聚集**部分因 LJ002 占评测主体**；但组内 **LJ001 0/11（0%）vs LJ002 25/89（28%）**（小 n、p≈0.02）仍是真实 prompt 依赖，失败样本仅**轻微偏长（text 105 vs 94 = 1.12×）、无位置偏置（后段 52%）**——**不写成「长 prompt 触发」**。仍**须专项排查**（prompt 内容 / 评测集排序 / fid 块边界）；这也是 n=3 冒烟（全 `LJ001`）漏掉崩坏的直接原因。
 4. **崩坏臂 CI 极大**（`sft` WER **[0.25, 1.06]**、`dpo_multiobj` WER **[0.57, 1.04]**、UTMOS **[2.58, 3.11]**）、**单说话人 LJSpeech**、**无人类听测（ABX/MOS）**——量级**仅供方向**，不可当精确效应。
@@ -168,8 +168,8 @@
 
 - corr(FM-margin, 分量 gap)：WER-gap **+0.412**、SIM-gap **−0.676**、UTMOS-gap **−0.597**（均显著）。
 - 换到 **reward-对齐方向**（−WER / +SIM / +UTMOS），三轴**全部负相关**：(−WER) **−0.41**、SIM **−0.68**、UTMOS **−0.60**。
-- **不是「只是 FM-vs-WER」**：SIM/UTMOS 反相关**更强** → 每个 perceptual 轴的「更好」都**更 off-manifold** → 结论从「只修 reward 组成」**强化为「整体弃 FM-as-reward」**。
-- **caveat（domain reviewer）**：SIM 在单说话人 LJSpeech 近 ceiling、判别弱，其 **−0.68 须标注可能被少数有 SIM 差的对带动**；**UTMOS −0.60 较实**。
+- **不是「只是 FM-vs-WER」**：UTMOS、SIM 两轴反相关均**更强**（UTMOS −0.60、SIM −0.68 ＞ WER −0.41）→ 每个 perceptual 轴的「更好」都**更 off-manifold** → 结论从「只修 reward 组成」**强化为「整体弃 FM-as-reward」**。**承重落在判别力更强的 UTMOS（−0.60）与方向明确的 WER（+0.41）**；SIM −0.68 同向但**仅作带 hedge 的次要佐证**（见下 caveat）。
+- **caveat（domain reviewer · SIM 仅作带 hedge 的次要佐证）**：per-component 的 **SIM_gap −0.68** 来自**单说话人 LJSpeech 上近-ceiling、判别力弱的 SIM 指标**，**可能由少数真有 SIM 差的对带动（杠杆）**；故**承重证据放在判别力更强的 UTMOS_gap（−0.60）与方向明确的 WER_gap（+0.41）**，**SIM −0.68 仅作带 hedge 的次要佐证**、不单独承重。
 
 ---
 
