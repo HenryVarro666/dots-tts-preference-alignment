@@ -3,7 +3,7 @@
 > **定位**：本文是 RQ1/RQ4 主表（PAPER §5.1）的**落地实测稿**。它把 [`06-核心发现-FM损失与奖励错配.md`](06-核心发现-FM损失与奖励错配.md) §9 的下游预测，由 **n=3 冒烟** 升级为 **全量 n=100 实测**，并给出解盲后的裁决——含一个**超出原预测**的反转（`sft` 也崩）。
 > **数据来源**：`ablation/run_matrix.py` 在 **100 句 LJSpeech held-out** 上、`--nfe 10 --skip-streaming`（离线模式）跑通；管线 `base + 4臂 合成（DotsTtsRuntime.generate）→ WER（Whisper-large-v3）/ SIM（ecapa）/ UTMOS（utmos22_strong）→ aggregate → main_table`。
 > **关联**：机理见 [`06`](06-核心发现-FM损失与奖励错配.md) §3/§4.2；第一轮审稿见 [`07-审稿意见-第一轮.md`](07-审稿意见-第一轮.md)；统稿框架见 [`../PAPER_DRAFT.md`](../PAPER_DRAFT.md) §5.1/§5.3/§6.4/§6.7。
-> **不变量（务必守住）**：Table 1 数字**逐字精确**；**EmergentTTS 列空**（LLM-judge 本次未跑）；**Table 2（streaming）仍 TBD/planned**（本次 `--skip-streaming`）；probe **偏相关已由 `alignment/probe_analysis.py` 跑出、intrinsic 确立**（partial r=−0.392、CI[−0.548,−0.209]，见 §8），**C6 不变**（intrinsic ≠ intrinsic-to-`L_FM`，诊断仍 preference-likelihood/off-manifold）；[`06`](06-核心发现-FM损失与奖励错配.md) §6/§6.7 正文措辞的同步另行处理。
+> **不变量（务必守住）**：Table 1 数字**逐字精确**；**EmergentTTS 列空**（LLM-judge 本次未跑）；**Table 2（streaming）仍 TBD/planned**（本次 `--skip-streaming`）；probe **偏相关已由 `alignment/probe_analysis.py` 跑出、intrinsic 确立**（partial r=−0.392、CI[−0.548,−0.209]，见 §8；并由 X5 settings-matched re-probe〔setting_gap≡0〕以最强设计复核、头条取 Spearman ρ=−0.216，见 §8.5），**C6 不变**（intrinsic ≠ intrinsic-to-`L_FM`，诊断仍 preference-likelihood/off-manifold）；[`06`](06-核心发现-FM损失与奖励错配.md) §6/§6.7 正文措辞的同步另行处理。
 
 ---
 
@@ -127,13 +127,13 @@
 1. **SFT-random 对照**（裁决 §3.1 新论点 / caveat 1）：跑 **SFT-on-random-candidates vs SFT-on-reward-winners** —— 若 random 不崩、reward-winner 崩，则「off-manifold 目标」为因，新论点坐实；若两者都崩，则混入「小数据 SFT 不稳」，须降级表述。
 2. **`dpo_multiobj` 生成时崩诊断（X2/X3 已部分回填）**：训练曲线已查——`fm_w` 全程稳 ~0.74、**未二次爆**、reward-margin 仍小 0.065 → **训练未发散**；交叉表大-gap 对 FM-reward 更脱钩（34% vs 48%）→ 偏 divergence；**合判 = 训练温和但 off-manifold 漂移 → LJ002 子集生成时崩**。**待补**：人工 TB-curve 复核 + 失败句听测裁决，最终落定 **graded degradation vs optimization divergence**（caveat 2），不径直坐实。
 3. **`LJ002` 聚集排查**（caveat 3）：核对失败句的 **prompt 长度 / 内容 / 评测集排序 / fid 块边界**，判定崩坏是否与某结构性因素绑定，而非均匀；据此决定是否需重排评测集 / 扩 n。
-4. ~~**`probe_analysis.py` 偏相关**（intrinsic 裁决）~~ **✓ 已完成（见 §8）**：`corr(FM-margin, reward-gap | guidance, num_steps, speaker_scale)` = **partial −0.392、CI[−0.548,−0.209]、显著**，控住全部生成 knob 仍存活 → **裁决：intrinsic（反相关非 grid effect）**；num_steps r=−0.237 是温和混淆但被偏相关控住。**C6 守住**：intrinsic ≠ intrinsic-to-`L_FM`，诊断仍 preference-likelihood/off-manifold。
+4. ~~**`probe_analysis.py` 偏相关**（intrinsic 裁决）~~ **✓ 已完成（见 §8）**：`corr(FM-margin, reward-gap | guidance, num_steps, speaker_scale)` = **partial −0.392、CI[−0.548,−0.209]、显著**，控住全部生成 knob 仍存活 → **裁决：intrinsic（反相关非 grid effect）**；num_steps r=−0.237 是温和混淆但被偏相关控住。**C6 守住**：intrinsic ≠ intrinsic-to-`L_FM`，诊断仍 preference-likelihood/off-manifold。**X5 settings-matched re-probe 进一步以最强设计（setting_gap≡0、配对无条件控住设置）复核确认 intrinsic、头条改 Spearman ρ=−0.216，见 §8.5。**
 5. **人类听测（ABX/MOS，≥15–20 听者）**：崩坏臂的量级与 UTMOS 退化须由人耳锚定；未做前**不称** perceptual / naturalness 退化（[`07`](07-审稿意见-第一轮.md) P2）。
 6. **补全 TBD**：Table 2（streaming：首包延迟 / RTF / 边界不连续度 / 流式 WER，本次 `--skip-streaming` 未跑）；EmergentTTS 列（LLM-judge 胜率）。
 
 ---
 
-## 8. `probe_analysis.py` 实测：intrinsic 裁决落地（偏相关 / confound / per-component / 杠杆 / binomial）
+## 8. `probe_analysis.py` 实测：intrinsic 裁决落地（偏相关 / confound / per-component / 杠杆 / binomial / X5 settings-matched 复核）
 
 > 这是 §7 下一步第 4 项的**回填**。`alignment/probe_analysis.py`（偏相关 + 修正后的 confound + per-component + 杠杆诊断 + 双系数 bootstrap CI）在全量 **N=188** pair 上跑出，**裁决：反相关是 intrinsic**——它**不是候选生成 knob 的产物**（偏相关控住 guidance/num_steps/speaker 全部 grid 维度后仍存活）。**严守 C6**：此处 intrinsic ≠「intrinsic to `L_FM`」（`L_FM` 仍是有效似然代理，open-SOAR 为证）；诊断**仍是** preference-likelihood 对齐失败 / off-manifold winner，**不回退** [`06`](06-核心发现-FM损失与奖励错配.md) §6 的措辞。
 
@@ -170,6 +170,19 @@
 - 换到 **reward-对齐方向**（−WER / +SIM / +UTMOS），三轴**全部负相关**：(−WER) **−0.41**、SIM **−0.68**、UTMOS **−0.60**。
 - **不是「只是 FM-vs-WER」**：UTMOS、SIM 两轴反相关均**更强**（UTMOS −0.60、SIM −0.68 ＞ WER −0.41）→ 每个 perceptual 轴的「更好」都**更 off-manifold** → 结论从「只修 reward 组成」**强化为「整体弃 FM-as-reward」**。**承重落在判别力更强的 UTMOS（−0.60）与方向明确的 WER（+0.41）**；SIM −0.68 同向但**仅作带 hedge 的次要佐证**（见下 caveat）。
 - **caveat（domain reviewer · SIM 仅作带 hedge 的次要佐证）**：per-component 的 **SIM_gap −0.68** 来自**单说话人 LJSpeech 上近-ceiling、判别力弱的 SIM 指标**，**可能由少数真有 SIM 差的对带动（杠杆）**；故**承重证据放在判别力更强的 UTMOS_gap（−0.60）与方向明确的 WER_gap（+0.41）**，**SIM −0.68 仅作带 hedge 的次要佐证**、不单独承重。
+
+### 8.5 X5 settings-matched re-probe（最强设计 · 无条件设置控制）：intrinsic 复核确认
+
+> X5 = **settings-matched re-probe**：winner/loser **生成设置完全一致**（同 guidance / num_steps / speaker，**仅 seed 变**）→ **setting_gap ≡ 0**（全 188 对）。这以**配对设计无条件**实现设置控制，**强于** §8.1 的线性偏相关（partial r=−0.392，本节 supersede/augment 之），是回答 intrinsic 问题的**最强设计**。join 188/188、1 对/prompt、prompt 级独立。
+
+- **头条（C4，诚实取 Spearman）**：Pearson **r=−0.489**（r²=0.240、CI[−0.616,−0.317]、显著）vs Spearman **ρ=−0.216**（ρ²=0.047、CI[−0.362,−0.054]、显著）；**Pearson/Spearman ≈ 2.26（>2）→ 高杠杆点主导线性系数 → 头条取稳健的 Spearman ρ（非 Pearson）**。
+- **杠杆**：删 top-5% |reward-gap|（10 对）Pearson → **−0.336**；LOO 删 #103（fid=LJ001-0109、reward-gap=+3.00）Pearson **翻正为 +0.024** → Pearson 脆弱 / 杠杆驱动，Spearman 稳。
+- **高-gap 存活（答死「win_rate 0.47 大半 near-tie」）**：full n=188 ρ=−0.216；top-50% n=94 ρ=**−0.318**[−0.504,−0.100]；top-25% n=47 ρ=**−0.533**[−0.678,−0.310] → **真有质量差时反相关更强 → 非 near-tie 伪影**。
+- **去噪 FM-margin（MC K=16）**：94/188（50%）为正、mean=**−0.0063**、单边 SD=0.1010（噪声）、win_rate=**0.53**、binomial **p=1.000** vs 0.5 → **去噪后 FM 仍无对 reward-winner 的系统偏好 → 「`L_FM` 不是有效的 implicit reward（L_FM-as-reward）」**，是**方法本身的边界**，正是本文 thesis（preference-likelihood 对齐失败）。（注：此判仅否定「`L_FM`-as-reward」，**不**否定 `L_FM` 作清洁目标的似然代理；open-SOAR 为证、C6 不变。）
+- **per-component（R2/R3，join 188/188）**：WER-gap **+0.517**[+0.299,+0.753]（正）、SIM-gap **−0.765**[−0.882,−0.548]（负、最强）、UTMOS-gap **−0.716**[−0.841,−0.501]（负）→ 反相关由 SIM & UTMOS（负）驱动、WER 正相关。社区命题：是「弃 FM-as-reward」还是「只修 reward 组成」（X5 实测实质偏前者：WER_gap 原始 +0.517但 reward 偏好低 WER→reward-对齐 −WER 上 −0.517、三轴 reward-对齐全反向、聚合为非负加权和符号不可翻 → 整体弃 FM-as-reward，见 WEIGHT-SIMPLEX）。**SIM_gap 杠杆（B3）**：删 top-5% → −0.445（仍显著）、LOO 删 #103 → +0.060 → **SIM 仅作次要佐证**（与 §8.4 hedge 一致）。
+- **split-half 信度（B6）**：r_hh=+0.922、Spearman-Brown r_full=0.959；disattenuated ρ_dis=**−0.221**（≥ |ρ|）→ 上报 ρ 是**保守下界**（K=16 测量噪声只衰减、不夸大）。
+- **confound / 偏相关段——按设计跳过**：setting_gap 恒为 0 → corr(FM-margin, const)=NaN、对常数偏相关是 no-op（否则循环论证）；设置控制已由**配对设计**达成（§8.2 中 num_steps −0.237 的温和混淆在此被设计性消除）。
+- **裁决**：**intrinsic 经最强设计（settings-matched）确认、保留**；头条系数改取 **Spearman**；现由 settings-matched 配对**无条件**支撑（强于、并 supersede/augment §8.1 的 partial −0.392）。**C6 不变**：intrinsic ≠ intrinsic-to-`L_FM`，诊断仍 preference-likelihood / off-manifold。
 
 ---
 
