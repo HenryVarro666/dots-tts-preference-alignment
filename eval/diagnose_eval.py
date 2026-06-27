@@ -22,7 +22,8 @@ diagnose_eval.py — 崩坏归因双诊断：(a)失败是否「聚集」 + (b)�
             --metrics alignment/out/dpo_multiobj/metrics.jsonl \
             --csv alignment/out/probe_per_pair.csv
     四个输入各自独立：缺哪个就跳过对应小节并提示，绝不报错（可只跑 (a) 或只跑 (b)）。
-    输入: 上述四文件(均为前序阶段已落盘产物，schema 不改)；输出: 终端诊断报告(不落盘新文件)。
+    输入: 上述四文件(均为前序阶段已落盘产物，schema 不改)；输出: 终端诊断报告(默认不落盘新文件)。
+    可选 --out: 把这份终端诊断报告原样同时落一份文本文件(默认 None=只打 stdout，行为与原先一致)。
 为什么这么设计:
     崩坏的「是什么」(失败率，见 results/aggregate_results 主表)已有；这里回答「为什么/怎么崩」。
     把 GPU 探针(probe_fm_reward 落盘 csv、训练落盘 metrics.jsonl、合成落盘 report)与**纯统计归因**解耦：
@@ -43,6 +44,7 @@ diagnose_eval.py — 崩坏归因双诊断：(a)失败是否「聚集」 + (b)�
 from __future__ import annotations
 
 import argparse
+import builtins
 import csv
 import re
 import statistics
@@ -54,6 +56,20 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from common import PATHS, read_jsonl  # noqa: E402
 
 _PROJ = PATHS.project_root
+
+
+# --------------------------------------------------------------------------- #
+# 报告 tee：所有 print 既照常打 stdout、又把同一份文本收进 _REPORT_BUF，
+# 供 main() 末尾在给了 --out 时整份落盘（默认 None=不写文件，与原行为一致）。
+# 用覆盖内建 print 的方式实现，既有打印点零改动即自动 tee。
+# --------------------------------------------------------------------------- #
+_REPORT_BUF: list[str] = []
+
+
+def print(*args, **kwargs):  # noqa: A001  覆盖内建 print 以 tee 进 buffer
+    builtins.print(*args, **kwargs)
+    sep, end = kwargs.get("sep", " "), kwargs.get("end", "\n")
+    _REPORT_BUF.append(sep.join(str(a) for a in args) + end)
 
 
 # --------------------------------------------------------------------------- #
@@ -312,6 +328,8 @@ def main() -> None:
                     help="(b) 该臂训练曲线 metrics.jsonl（看 fm_w/reward_margin 末段是否二次爆）")
     ap.add_argument("--csv", default=str(_PROJ / "alignment" / "out" / "probe_per_pair.csv"),
                     help="(b) probe_per_pair.csv（reward_gap×mc_margin 交叉表）")
+    ap.add_argument("--out", default=None,
+                    help="把上面的终端诊断报告原样同时落盘到该文本文件（默认 None=只打 stdout，行为不变）")
     args = ap.parse_args()
 
     diagnose_clustering(Path(args.eval_manifest),
@@ -322,6 +340,10 @@ def main() -> None:
     print("=" * 72)
     print("说明: 本脚本只读不写、纯定性归因。失败率硬指标见 results/aggregate_results 主表；")
     print("      偏相关/intrinsic 的统计裁决见 alignment/probe_analysis.py。")
+
+    if args.out:
+        Path(args.out).write_text("".join(_REPORT_BUF), encoding="utf-8")
+        print(f"\n✓ 诊断报告已同时落盘 -> {args.out}")
 
 
 if __name__ == "__main__":
