@@ -174,6 +174,27 @@ def _boot_ci(fn, arrays, B=3000, seed=20260626, alpha=0.05):
     return float(lo), float(hi)
 
 
+def _perm_p(fn, x, y, B=10000, seed=20260628) -> float:
+    """置换检验（R6 / 审稿 R1）：固定 x、把 y 标签随机重排 B 次重算统计量，得双侧
+    p=Pr(|perm|≥|obs|)。非参、不依赖正态/bootstrap 分布假设；当 pairs 为 1 对/prompt
+    （prompt 级独立，见 [独立性]）时即 cluster-respecting，正面回应「188 对单说话人、CI 脆弱」。
+    +1 平滑避免 p=0；obs 为 NaN（settings-matched 常数列）则返回 NaN。"""
+    rng = np.random.default_rng(seed)
+    x = np.asarray(x, float)
+    y = np.asarray(y, float)
+    if x.std() == 0 or y.std() == 0:  # 常数列(如 settings-matched 的 setting_gap)：相关无定义
+        return float("nan")
+    obs = fn(x, y)
+    if obs != obs:
+        return float("nan")
+    cnt = 0
+    for _ in range(B):
+        v = fn(x, rng.permutation(y))
+        if v == v and abs(v) >= abs(obs):
+            cnt += 1
+    return (cnt + 1) / (B + 1)
+
+
 def _binom_two_sided(k: int, n: int, p: float = 0.5) -> float:
     probs = [comb(n, i) * p ** i * (1 - p) ** (n - i) for i in range(n + 1)]
     return float(sum(pi for pi in probs if pi <= probs[k] + 1e-12))
@@ -227,6 +248,15 @@ def main() -> None:
     _emit(f"  Spearman ρ={spear:+.3f}  (ρ²={spear**2:.3f})  95%CI[{spear_ci[0]:+.3f},{spear_ci[1]:+.3f}]  {_sig(*spear_ci)}")
     _emit(f"  → 稳健量(Spearman) ρ²={spear**2:.1%} 才是该领的头条；Pearson/Spearman 比值={abs(pear/spear) if spear else float('nan'):.2f}"
           f"{'（>2 ⇒ 高杠杆点主导线性系数，C4 成立）' if spear and abs(pear/spear) > 2 else ''}\n")
+
+    # ---- (R6) 置换检验：头条系数的非参 p（答审稿 R1「188 对单说话人、CI 脆弱」；reporting-only）----
+    pp_s = _perm_p(_spearman, margin, rgap)
+    pp_p = _perm_p(_pearson, margin, rgap)
+    _cluster = "1 对/prompt → cluster-respecting" if ndp == n else "存在共享 prompt → 近似，严格需 block-permutation"
+    _emit(f"[R6 置换检验] 标签重排 B=10000（{_cluster}）：")
+    _emit(f"  Spearman 双侧 p_perm={pp_s:.4f} {'(显著)' if pp_s == pp_s and pp_s < 0.05 else '(不显著)'}"
+          f"  |  Pearson 双侧 p_perm={pp_p:.4f} {'(显著)' if pp_p == pp_p and pp_p < 0.05 else '(不显著)'}")
+    _emit("  → 非参 p 与 bootstrap CI 互证、不靠分布假设；头条仍领 Spearman。\n")
 
     # ---- (MINOR) binomial ----
     bp = _binom_two_sided(n_pos, n)
