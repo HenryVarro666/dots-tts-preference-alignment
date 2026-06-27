@@ -36,7 +36,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from common import PATHS, read_jsonl  # noqa: E402
+from common import PATHS, read_jsonl, file_lock  # noqa: E402
 
 RESULTS = PATHS.results_dir
 
@@ -198,7 +198,11 @@ def main() -> None:
     ap = argparse.ArgumentParser(description="结果汇总")
     ap.add_argument("--ledger", default=str(PATHS.project_root / "ablation" / "ledger.jsonl"))
     args = ap.parse_args()
+    with file_lock():  # 串行化「读账本 + 全 summary → 写主表」整段，防并发 aggregate 互相覆盖（无需手动末尾再 aggregate）
+        _aggregate(args)
 
+
+def _aggregate(args) -> None:
     ledger = list(read_jsonl(args.ledger)) if Path(args.ledger).exists() else []
     tags, ledger_by_tag = _discover_tags(ledger)  # ledger 条目 ∪ results/out 全部 summary 的并集
     master_rows = []

@@ -21,6 +21,7 @@ common.py — 全项目共享契约与工具（路径 / JSONL schema / 小工具
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import sys
@@ -123,6 +124,33 @@ def _resolve_paths() -> _Paths:
 
 
 PATHS = _resolve_paths()
+
+# 共享文件锁路径：串行化对共享产物(ablation/ledger.jsonl / results/out 主表)的并发写。
+RESULTS_LOCK = PATHS.project_root / ".results.lock"
+
+
+@contextlib.contextmanager
+def file_lock(lock_path: "str | Path" = RESULTS_LOCK):
+    """跨进程独占文件锁(fcntl.flock)：让 x4/x6/x7/x8 并行跑时，即便 eval 末尾的 ledger 写 / 主表汇总
+    撞上也**自动串行**、不互相覆盖或损坏——无需手动末尾再跑一次 aggregate。
+    只套**快的读写临界区**(写 ledger / 读全 summary→写主表)，不套昂贵的合成/打分 → 不影响并行加速。
+    fcntl 不可用(如 Windows)时降级为无锁、不阻断主流程。"""
+    p = Path(lock_path)
+    try:
+        p.parent.mkdir(parents=True, exist_ok=True)
+        import fcntl  # POSIX-only
+    except Exception:
+        yield  # 无 fcntl / 无法建锁目录：降级无锁
+        return
+    f = open(p, "w")
+    try:
+        fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+        yield
+    finally:
+        try:
+            fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+        finally:
+            f.close()
 
 
 def ensure_dots_tts_importable() -> None:

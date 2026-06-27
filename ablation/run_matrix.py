@@ -26,7 +26,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from common import PATHS  # noqa: E402
+from common import PATHS, file_lock  # noqa: E402
 
 PROJ = PATHS.project_root
 
@@ -109,7 +109,8 @@ def main() -> None:
                            "streaming_dir": str(st_dir), "status": status})
 
     out = Path(__file__).parent / "ledger.jsonl"
-    out.write_text("\n".join(json.dumps(r, ensure_ascii=False) for r in ledger) + "\n", encoding="utf-8")
+    with file_lock():  # 串行化 ledger 写，防并行 run_matrix(x4/x6/x7/x8) 互相覆盖/损坏账本
+        out.write_text("\n".join(json.dumps(r, ensure_ascii=False) for r in ledger) + "\n", encoding="utf-8")
     print(f"✓ 账本 {len(ledger)} 行 -> {out}")
     if args.dry_run:
         print("  (dry-run：未真正执行，仅打印命令 + 写账本)")
