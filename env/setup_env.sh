@@ -3,6 +3,7 @@
 # setup_env.sh — 一键准备 GPU 机器上的实验环境
 #
 # 做什么:   建 venv → 装 dots.tts(-e) → 装本实验增量依赖 → 装 seed-tts-eval 依赖
+#           → 挂 VoxCPM(X10 二模型探针, 走 sys.path/.pth、不 pip 装免 torch 冲突)
 #           → 下载 WavLM-SV 说话人验证 ckpt → 提示 EmergentTTS-Eval 需另 clone。
 # 怎么做:   纯 shell；幂等(可重复跑)；每步前打印「在做什么、为什么」。
 # 为什么:   多源依赖(dots.tts / seed-tts-eval / speechmos)易冲突，集中固化一次。
@@ -34,14 +35,17 @@ resolve_or_clone() {
   echo "${dst}"
 }
 
-echo "[0/6] 准备依赖仓库 dots.tts / seed-tts-eval"
+echo "[0/6] 准备依赖仓库 dots.tts / seed-tts-eval / VoxCPM"
 DOTS_TTS="$(resolve_or_clone dots.tts https://github.com/rednote-hilab/dots.tts)"
 SEED_EVAL="$(resolve_or_clone seed-tts-eval https://github.com/BytedanceSpeech/seed-tts-eval)"
-# 让 common.py 在独立部署时也能定位到它们
+VOXCPM="$(resolve_or_clone VoxCPM https://github.com/OpenBMB/VoxCPM)"   # X10 架构级二模型探针（仅 X10 用）
+# 让 common.py / 探针在独立部署时也能定位到它们
 export DOTS_TTS_REPO="${DOTS_TTS}"
 export SEED_TTS_EVAL="${SEED_EVAL}"
+export VOXCPM_REPO="${VOXCPM}"          # probe_fm_reward_voxcpm 的 ensure_voxcpm_importable 优先认它
 echo "  dots.tts     = ${DOTS_TTS}"
 echo "  seed-tts-eval= ${SEED_EVAL}"
+echo "  VoxCPM       = ${VOXCPM}"
 
 echo "[1/6] 创建并激活 venv (为什么: 隔离依赖，避免污染系统 Python)"
 python3 -m venv "${VENV}"
@@ -54,6 +58,25 @@ pip install -e "${DOTS_TTS}"
 
 echo "[3/6] 安装本实验增量依赖 (jiwer/peft/deepspeed/tensorboard ...; UTMOS 走 torch.hub)"
 pip install -e "${PROJECT_ROOT}"
+
+# 把 VoxCPM 的 src 挂进本 venv 的 site-packages（写一个 .pth），让 `import voxcpm` 在任意 shell 持久可用。
+# 为什么不 `pip install -e VoxCPM`：VoxCPM 复用 dots.tts 已装好的 torch/transformers，pip 装其全部依赖易把
+# torch 顶成别的版本→污染主管线；.pth 只加 import 路径、零依赖改动，与探针 ensure_voxcpm_importable 的
+# sys.path 思路一致但持久（无需每次 export VOXCPM_REPO）。对实验意义：X10 一键即用、不碰主实验环境。
+VOXCPM_SRC="${VOXCPM}/src"
+if [[ -d "${VOXCPM_SRC}/voxcpm" ]]; then
+  SITE="$(python -c 'import site; print(site.getsitepackages()[0])')"
+  echo "${VOXCPM_SRC}" > "${SITE}/voxcpm.pth"
+  echo "  ✓ VoxCPM 已挂到 site-packages: ${SITE}/voxcpm.pth -> ${VOXCPM_SRC}"
+  if python -c "import voxcpm" 2>/dev/null; then
+    echo "  ✓ import voxcpm OK"
+  else
+    echo "  ⚠️ import voxcpm 仍失败——多半缺 VoxCPM 的某个子依赖；X10 跑前按报错 pip install 对应包即可"
+    echo "     （X10-only：不影响 dots.tts 主管线；切勿为它升级/降级 torch）"
+  fi
+else
+  echo "  ⚠️ 未找到 ${VOXCPM_SRC}/voxcpm —— VoxCPM 仅 X10 探针需要；确认其 clone 成功（或手动 export VOXCPM_REPO 指向 repo 根）"
+fi
 
 echo "[4/6] 安装 seed-tts-eval 依赖 (WER 用 funasr/Paraformer, SIM 用 WavLM)"
 if [[ -f "${SEED_EVAL}/requirements.txt" ]]; then
@@ -87,6 +110,9 @@ cat <<EOF
 环境准备完成。验证:
   source ${VENV}/bin/activate
   python -c "import dots_tts, jiwer, peft; print('ok')"
+  python -c "import voxcpm; print('voxcpm ok')"        # X10 二模型探针（可选）
+X10 跑前先过命门自检:
+  python alignment/probe_fm_reward_voxcpm.py --ckpt openbmb/VoxCPM2 --pairs pairs/out/pairs_best_worst.jsonl --selfcheck
 下一步: 见 docs/03-REPRODUCE.md
 =============================================================================
 EOF
