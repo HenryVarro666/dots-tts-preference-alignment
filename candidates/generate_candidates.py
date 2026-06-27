@@ -188,12 +188,17 @@ def main() -> None:
     #   哪些 prompt 不适配」；零候选 prompt 会被 build_preference_pairs 自动剔除、不进 settings-matched 对。
     fids_with = {r.fid for r in rows}
     empty_prompts = [p["fid"] for p in prompts if p["fid"] not in fids_with]
-    attempted = n_gen + n_fail  # 仅算「真生成尝试」，复用不计入分母
+    attempted = n_gen + n_fail        # 本次「真生成尝试」数：命中缓存(复用)的不重算、不进分母
+    grid_total = total * len(grid)    # 全网格应有候选槽位：n_prompts × 每 prompt 候选数(=K)
+    rate_attempted = (n_fail / attempted) if attempted else 0.0   # 本次尝试口径：缓存多时只补几个、会虚高到 100%
+    rate_grid = (n_fail / grid_total) if grid_total else 0.0      # 全网格口径：真实规模，不受缓存命中影响
     report = {
         "mode": "fixed-setting" if args.fixed_setting else "grid",
         "n_prompts": total, "k": args.k,
         "n_candidates": len(rows), "n_generated": n_gen, "n_reused": n_skip, "n_failed": n_fail,
-        "failure_rate": (n_fail / attempted) if attempted else 0.0,
+        "grid_total": grid_total,
+        "failure_rate": rate_attempted,        # 旧字段保留：本次尝试口径(向后兼容)
+        "failure_rate_grid": rate_grid,        # 新增：占全网格口径——看失败规模请看这个
         "n_empty_prompts": len(empty_prompts), "empty_prompts": empty_prompts[:50],
         "fixed_setting": (fixed if args.fixed_setting else None),
         "failures": fail_records[:200],
@@ -201,8 +206,9 @@ def main() -> None:
     report_path = PATHS.candidates_dir / "_generation_report.json"
     report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     if n_fail or empty_prompts:
-        print(f"  ⚠️ 生成失败 {n_fail}/{attempted}（失败率 {report['failure_rate']:.1%}）；"
-              f"{len(empty_prompts)} 个 prompt 零候选 -> {report_path.name}")
+        print(f"  ⚠️ 生成失败 {n_fail}/{attempted} 本次尝试（{rate_attempted:.1%}）"
+              f"；占全网格 {n_fail}/{grid_total}={rate_grid:.2%}"
+              f"；{len(empty_prompts)} 个 prompt 零候选 -> {report_path.name}")
 
 
 def _write_wav_atomic(path: Path, audio, sample_rate: int) -> None:
