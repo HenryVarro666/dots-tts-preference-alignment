@@ -37,6 +37,13 @@ import torch.nn.functional as F  # noqa: E402
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from common import PATHS, read_jsonl, write_jsonl  # noqa: E402
 
+# 进度可视化（SIM 对每条候选都要 2 次前向：候选嵌入 + 参考嵌入）。
+try:
+    from tqdm import tqdm  # noqa: E402
+except Exception:  # pragma: no cover
+    def tqdm(it, **_):  # type: ignore
+        return it
+
 _DEFAULT_CKPT = PATHS.project_root / ".ckpt" / "wavlm_large_finetune.pth"
 
 
@@ -57,6 +64,10 @@ class _EcapaBackend:
 
     def __init__(self) -> None:
         self._clf = None
+        # 路径->嵌入缓存：同一 prompt 的 K 个候选共享同一参考音频(prompt_audio)，
+        # 不缓存就会把每个参考重复编码 K 次。缓存后参考只编码一次 → SIM 这步的前向次数
+        # 从 (候选数 + 候选数) 降到 (候选数 + 唯一参考数)，约省掉近一半 GPU 前向。
+        self._emb_cache: dict[str, "torch.Tensor"] = {}
 
     def _ensure(self):
         if self._clf is not None:
@@ -71,12 +82,17 @@ class _EcapaBackend:
 
     def _emb(self, path: str):
         self._ensure()
+        hit = self._emb_cache.get(path)
+        if hit is not None:
+            return hit
         wav = _load_16k_mono(path)
         if torch.cuda.is_available():
             wav = wav.cuda()
         with torch.no_grad():
             e = self._clf.encode_batch(wav)  # (1, 1, D)
-        return e.reshape(-1)
+        e = e.reshape(-1)
+        self._emb_cache[path] = e
+        return e
 
     def cosine(self, a: str, b: str) -> float:
         return float(F.cosine_similarity(self._emb(a).unsqueeze(0), self._emb(b).unsqueeze(0)).item())
@@ -88,6 +104,7 @@ class _WavLMBackend:
     def __init__(self, ckpt: Path) -> None:
         self.ckpt = Path(ckpt)
         self._model = None
+        self._emb_cache: dict[str, "torch.Tensor"] = {}  # 同 ecapa：复用参考音频嵌入，避免逐候选重复编码
 
     def _ensure(self):
         if self._model is not None:
@@ -111,11 +128,16 @@ class _WavLMBackend:
 
     def _emb(self, path: str):
         self._ensure()
+        hit = self._emb_cache.get(path)
+        if hit is not None:
+            return hit
         wav = _load_16k_mono(path)
         if torch.cuda.is_available():
             wav = wav.cuda()
         with torch.no_grad():
-            return self._model(wav).reshape(-1)
+            e = self._model(wav).reshape(-1)
+        self._emb_cache[path] = e
+        return e
 
     def cosine(self, a: str, b: str) -> float:
         return float(F.cosine_similarity(self._emb(a).unsqueeze(0), self._emb(b).unsqueeze(0)).item())
@@ -130,8 +152,9 @@ def main() -> None:
     args = ap.parse_args()
 
     backend = _EcapaBackend() if args.backend == "ecapa" else _WavLMBackend(Path(args.wavlm_ckpt))
+    cands = list(read_jsonl(args.candidates))  # 物化以便 tqdm 知道总数、显示百分比/ETA
     rows = []
-    for c in read_jsonl(args.candidates):
+    for c in tqdm(cands, desc=f"SIM/{args.backend}", unit="pair"):
         sim = backend.cosine(c["audio"], c["prompt_audio"])  # 候选 vs 参考音频
         rows.append({"fid": c["fid"], "k": c["k"], "sim": sim})
     n = write_jsonl(PATHS.rewards_dir / "sim.jsonl", rows)

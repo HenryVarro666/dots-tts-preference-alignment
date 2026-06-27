@@ -28,6 +28,15 @@ os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")  # 顺带消除 tokeniz
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from common import PATHS, read_jsonl, write_jsonl  # noqa: E402
 
+# 进度可视化：WER 是 step 2 里最耗时的一段（Whisper-large-v3 逐批转写），
+# 原来整段只在结束时打一行 ✓，中途数分钟无输出，看起来像卡死。tqdm 让它逐批刷进度。
+# transformers/funasr 都硬依赖 tqdm，几乎必然可用；万一缺失则退化为恒等迭代，不影响结果。
+try:
+    from tqdm import tqdm  # noqa: E402
+except Exception:  # pragma: no cover
+    def tqdm(it, **_):  # type: ignore
+        return it
+
 
 class _ASR:
     """惰性加载的双语 ASR 包装：EN→Whisper(transformers pipeline)，ZH→Paraformer(funasr)。
@@ -108,14 +117,19 @@ def main() -> None:
     zh = [c for c in cands if (c.get("lang") or "en") == "zh"]
 
     rows = []
-    # EN：批量转写（一次一批喂 Whisper，远快于逐条）
+    # EN：分批喂 Whisper（与原来同 batch_size、同 generate_kwargs，仅把"一次性整列大调用"
+    # 拆成逐批，好让 tqdm 显示进度——结果与单次调用完全等价，只是中途可见到第几批/ETA。
     if en:
-        hyps = asr.transcribe_en_batch([c["audio"] for c in en], batch_size=args.batch_size)
+        audios = [c["audio"] for c in en]
+        bs = max(1, args.batch_size)
+        hyps: list[str] = []
+        for i in tqdm(range(0, len(audios), bs), desc=f"WER/EN Whisper(bs={bs})", unit="batch"):
+            hyps.extend(asr.transcribe_en_batch(audios[i:i + bs], batch_size=bs))
         for c, hyp in zip(en, hyps):
             err = jiwer.wer(_normalize(c["text"], "en"), _normalize(hyp, "en"))
             rows.append({"fid": c["fid"], "k": c["k"], "audio": c["audio"], "lang": "en", "wer": float(err)})
     # ZH：funasr 逐条（习惯报 CER 字级）
-    for c in zh:
+    for c in tqdm(zh, desc="WER/ZH Paraformer", unit="clip"):
         hyp = _normalize(asr.transcribe_zh(c["audio"]), "zh")
         err = jiwer.cer(_normalize(c["text"], "zh"), hyp)
         rows.append({"fid": c["fid"], "k": c["k"], "audio": c["audio"], "lang": "zh", "wer": float(err)})
