@@ -17,6 +17,11 @@ generate_candidates.py — 阶段②：用 dots.tts 对每个 prompt 采样 K �
     最贵的一步(~3h/188prompt)。支持中断后续跑——已存在的 wav 直接复用、只补缺的；
     用原子写(.tmp→os.replace)避免半截 wav；每 10 prompt 写一次索引。重跑用**同一 --k**即可。
     全部命中缓存时连模型都不加载、秒完成。
+逐候选容错（重要）:
+    dots.tts 对某些 (prompt,设置,seed) 会**立即-EOS**（RuntimeError: produced no payload latents…），
+    --fixed-setting 把同一组设置套到所有 prompt 时尤易撞上。单候选失败**不炸全程**：记账+跳过+续跑，
+    失败明细与失败率落 `_generation_report.json`（失败率本身是结果）。零/单候选 prompt 由下游
+    build_preference_pairs(`len(items)<2: continue`)自动剔除、不进 settings-matched 对。续跑会重试缺的。
 
 X5 settings-matched 复探针模式（--fixed-setting，新增）:
     动机: R3/审稿人(DA)质疑「网格本身制造了 guidance↔质量 的偏相关——反相关也许只是 grid 假象」。
@@ -42,6 +47,7 @@ X5 settings-matched 复探针模式（--fixed-setting，新增）:
 
 前置条件: 已装环境(env/setup_env.sh)、已下载 dots.tts-base 权重、已生成 prompts。
 预期结果: candidates/out/{fid}/cand_{k}.wav + candidates/out/candidates_index.jsonl
+    + candidates/out/_generation_report.json（失败率/零候选 prompt；逐候选容错的产物）。
     （--fixed-setting 时 wav 为 cand_fixed_{k}.wav，索引仍写同一 candidates_index.jsonl）。
 ⚠️ 本机(无 GPU/无权重)只语法检查；真正生成在 GPU 机器上。
 """
@@ -50,6 +56,7 @@ from __future__ import annotations
 
 import argparse
 import itertools
+import json
 import sys
 from pathlib import Path
 
@@ -116,7 +123,8 @@ def main() -> None:
     index_path = PATHS.candidates_dir / "candidates_index.jsonl"
     runtime = None  # 延迟加载：全部已缓存时无需加载模型/占 GPU（断点续跑友好）
     rows: list[CandidateRow] = []
-    n_gen, n_skip = 0, 0
+    n_gen, n_skip, n_fail = 0, 0, 0
+    fail_records: list[dict] = []  # 逐候选生成失败明细（立即-EOS 等）→ 落 _generation_report.json
     total = len(prompts)
     for pi, p in enumerate(prompts):
         fid = p["fid"]
@@ -141,13 +149,30 @@ def main() -> None:
                 from dots_tts.runtime import DotsTtsRuntime  # type: ignore
                 runtime = DotsTtsRuntime.from_pretrained(args.model, precision=args.precision)
             seed_everything(seed)
-            result = runtime.generate(
-                text=p["text"], prompt_audio_path=p["prompt_audio"],
-                prompt_text=p["prompt_text"], language=p.get("lang"),
-                num_steps=gp["num_steps"], guidance_scale=gp["guidance_scale"],
-                speaker_scale=gp["speaker_scale"], normalize_text=True,
-            )
-            _write_wav_atomic(wav_path, result["audio"], int(result["sample_rate"]))
+            # 单候选生成失败不该炸全程：dots.tts 对某些 (prompt,设置,seed) 会立即-EOS
+            #   （RuntimeError: produced no payload latents…），--fixed-setting 把同一组设置套到
+            #   所有 prompt 时更易撞上（某 prompt 在该固定设置下不产音）。逐候选 try/except：
+            #   失败则记账+跳过该候选、继续；失败率本身是结果（落 _generation_report.json）。
+            #   下游 build_preference_pairs 已 `len(items)<2: continue`，零/单候选 prompt 自动不成对。
+            try:
+                result = runtime.generate(
+                    text=p["text"], prompt_audio_path=p["prompt_audio"],
+                    prompt_text=p["prompt_text"], language=p.get("lang"),
+                    num_steps=gp["num_steps"], guidance_scale=gp["guidance_scale"],
+                    speaker_scale=gp["speaker_scale"], normalize_text=True,
+                )
+                _write_wav_atomic(wav_path, result["audio"], int(result["sample_rate"]))
+            except Exception as e:  # noqa: BLE001 —— 故意宽捕获：任何单候选失败都降级为跳过
+                n_fail += 1
+                fail_records.append({
+                    "fid": fid, "k": k, "seed": seed,
+                    "num_steps": gp["num_steps"], "guidance_scale": gp["guidance_scale"],
+                    "speaker_scale": gp["speaker_scale"],
+                    "error": f"{type(e).__name__}: {str(e)[:200]}",
+                })
+                print(f"    ⚠️ 候选生成失败 fid={fid} k={k} seed={seed} "
+                      f"({type(e).__name__})；跳过该候选、继续")
+                continue
             rows.append(row); made += 1; n_gen += 1
         # 周期性写索引：中途中断也留下「截至此刻」的可用索引；重跑会自动补全
         if (pi + 1) % 10 == 0 or pi == total - 1:
@@ -155,9 +180,29 @@ def main() -> None:
         print(f"  [{pi+1}/{total}] {fid}: 新生成 {made} / 复用 {reused}")
 
     write_jsonl(index_path, rows)
-    print(f"✓ 共 {len(rows)} 候选（新生成 {n_gen}，复用 {n_skip}）-> {index_path}")
-    if n_skip and not n_gen:
+    print(f"✓ 共 {len(rows)} 候选（新生成 {n_gen}，复用 {n_skip}，失败 {n_fail}）-> {index_path}")
+    if n_skip and not n_gen and not n_fail:
         print("  (全部命中缓存：本次未加载模型，断点续跑已完成)")
+
+    # 生成失败报告：失败率本身是结果。--fixed-setting 下的立即-EOS 率反映「该固定设置对
+    #   哪些 prompt 不适配」；零候选 prompt 会被 build_preference_pairs 自动剔除、不进 settings-matched 对。
+    fids_with = {r.fid for r in rows}
+    empty_prompts = [p["fid"] for p in prompts if p["fid"] not in fids_with]
+    attempted = n_gen + n_fail  # 仅算「真生成尝试」，复用不计入分母
+    report = {
+        "mode": "fixed-setting" if args.fixed_setting else "grid",
+        "n_prompts": total, "k": args.k,
+        "n_candidates": len(rows), "n_generated": n_gen, "n_reused": n_skip, "n_failed": n_fail,
+        "failure_rate": (n_fail / attempted) if attempted else 0.0,
+        "n_empty_prompts": len(empty_prompts), "empty_prompts": empty_prompts[:50],
+        "fixed_setting": (fixed if args.fixed_setting else None),
+        "failures": fail_records[:200],
+    }
+    report_path = PATHS.candidates_dir / "_generation_report.json"
+    report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+    if n_fail or empty_prompts:
+        print(f"  ⚠️ 生成失败 {n_fail}/{attempted}（失败率 {report['failure_rate']:.1%}）；"
+              f"{len(empty_prompts)} 个 prompt 零候选 -> {report_path.name}")
 
 
 def _write_wav_atomic(path: Path, audio, sample_rate: int) -> None:
