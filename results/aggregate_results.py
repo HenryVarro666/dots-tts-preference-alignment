@@ -7,6 +7,8 @@ aggregate_results.py — 阶段⑨：汇总所有 run 的指标 → 主表/流�
     每个数字标注来源 run（可溯源 ledger）。
 怎么做:
     纯标准库；把分散的 *.utmos.jsonl / *.streaming.json / seed-tts-eval 输出/emergent.json 按 tag 归并。
+    要汇总的 tag 集合 = ledger 条目 ∪ results/out/ 下所有 *.summary.json 对应 tag(按 tag 去重、稳定顺序)——
+    累积读全部 summary，避免主表被最近一次 run_matrix 的 ledger 覆盖。
     并从每个 run 的 ledger.offline_dir 读 _synthesis_report.json，把 failure_rate(生成崩坏占比)
     贯通进主表——它与 WER 同源(同一离线合成)但是另一维度的硬指标。
 为什么:    把「散落的数字」收敛成「能直接放进论文的表」，且每格可追到 run。
@@ -25,6 +27,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -32,6 +35,44 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from common import PATHS, read_jsonl  # noqa: E402
 
 RESULTS = PATHS.results_dir
+
+_NFE_RE = re.compile(r"_nfe(\d+)")
+
+
+def _parse_nfe(tag: str) -> int | None:
+    """从 tag 名 *_nfeN 解析 NFE（供 ledger 外、只有 summary.json 的臂补字段）。"""
+    m = _NFE_RE.search(tag)
+    return int(m.group(1)) if m else None
+
+
+def _treatment_from_tag(tag: str) -> str:
+    """ledger 外的臂没有 treatment，从 tag 去掉 _nfeN 后缀当作 treatment 名。"""
+    return _NFE_RE.sub("", tag) or tag
+
+
+def _discover_tags(ledger: list[dict]) -> tuple[list[str], dict]:
+    """要汇总的 tag 集合 = ledger 条目 ∪ results/out/ 下所有 *.summary.json 对应 tag。
+
+    为什么并集：只跟 ledger 会让主表被最近一次 run_matrix 覆盖——跑过又未重列在
+    当前 ledger 的臂会消失。改为「累积读全部 summary」，跑过的每个臂永久进表。
+    去重保序：先按 ledger 出现顺序，再补 results/out 里 ledger 外的 tag（按文件名排序，稳定）。
+    排除 *_stream.summary.json（那是同一 tag 的流式产物，不是独立臂）。
+    """
+    order: list[str] = []
+    seen: set[str] = set()
+    ledger_by_tag: dict[str, dict] = {}
+    for run in ledger:
+        tag = run["tag"]
+        ledger_by_tag.setdefault(tag, run)
+        if tag not in seen:
+            seen.add(tag); order.append(tag)
+    for p in sorted(RESULTS.glob("*.summary.json")):
+        if p.name.endswith("_stream.summary.json"):
+            continue
+        tag = p.name[: -len(".summary.json")]
+        if tag not in seen:
+            seen.add(tag); order.append(tag)
+    return order, ledger_by_tag
 
 
 def _load_json(name: str) -> dict:
@@ -89,16 +130,23 @@ def main() -> None:
     args = ap.parse_args()
 
     ledger = list(read_jsonl(args.ledger)) if Path(args.ledger).exists() else []
+    tags, ledger_by_tag = _discover_tags(ledger)  # ledger 条目 ∪ results/out 全部 summary 的并集
     master_rows = []
-    for run in ledger:
-        tag = run["tag"]
+    for tag in tags:
+        run = ledger_by_tag.get(tag)
         off = _load_json(f"{tag}.summary.json")          # score_synth 离线 WER/SIM/UTMOS(+CI)
         stm = _load_json(f"{tag}_stream.summary.json")   # score_synth 流式 WER/SIM
         st = _load_json(f"{tag}.streaming.json")         # streaming_metrics 首包/边界
         em = _load_json(f"{tag}.emergent.json")          # EmergentTTS(可选)
-        rep = _load_synth_report(run.get("offline_dir")) # 离线合成失败率（崩坏硬指标）
+        if run is not None:
+            treatment, nfe, ckpt = run["treatment"], run["nfe"], run["ckpt"]
+            rep = _load_synth_report(run.get("offline_dir"))  # 离线合成失败率（崩坏硬指标）
+        else:
+            # ledger 外的臂：仅有 summary.json——nfe 从 *_nfeN 解析，ckpt/offline_dir 缺则标记/留空
+            treatment, nfe, ckpt = _treatment_from_tag(tag), _parse_nfe(tag), "(ledger 外)"
+            rep = {}
         master_rows.append({
-            "treatment": run["treatment"], "tag": tag, "nfe": run["nfe"], "n": off.get("n"),
+            "treatment": treatment, "tag": tag, "nfe": nfe, "n": off.get("n"),
             "wer": off.get("wer"), "wer_ci": off.get("wer_ci"),
             "sim": off.get("sim"), "sim_ci": off.get("sim_ci"),
             "utmos": off.get("utmos"), "utmos_ci": off.get("utmos_ci"),
@@ -110,7 +158,7 @@ def main() -> None:
             "stream_wer": stm.get("wer"), "stream_sim": stm.get("sim"),
             "first_packet_ms_p50": (st.get("first_packet_ms") or {}).get("p50"),
             "boundary_discont": st.get("boundary_discontinuity_p95_flux"),
-            "ckpt": run["ckpt"],  # 溯源
+            "ckpt": ckpt,  # 溯源（ledger 外的臂无 ckpt → 标 '(ledger 外)'）
         })
 
     RESULTS.mkdir(parents=True, exist_ok=True)
