@@ -212,17 +212,19 @@ def main() -> None:
     print(f"    单次 margin 标准差(噪声量级)={var_single**0.5:.4f}  ← 远大于 MC 均值则=高噪")
     print(f"    平均 win_rate(K 次中 winner 更优占比)={sum(win_rates)/n:.2f}")
     print(f"(B) 去噪 FM margin vs reward 差: Pearson={pear:+.3f}  Spearman={spear:+.3f}")
-    print("\n=== 架构级泛化判定(对照 dots.tts 的 Pearson≈−0.41) ===")
-    # 反相关 = margin 与 reward_gap 负相关(reward 越高的 winner，FM 反而没更低)。
-    anti_correlated = (pear == pear) and pear < -0.2  # pear==pear 排除 NaN
-    if anti_correlated:
-        print("▶ 反相关在 VoxCPM 上**复现** → FM-as-reward 的反相关是 **continuous-latent TTS 架构级**现象")
-        print("  (dots=flow-matching、VoxCPM=diffusion，两套独立实现一致) → 解 EIC CRITICAL #3(N=1)。")
-    elif (pear == pear) and pear > 0.2:
-        print("▶ VoxCPM 上呈**正相关** → 反相关是 dots.tts 的实现特性，不跨架构 → 结论须诚实收窄。")
+    # 头条领稳健 Spearman（守 C4：Pearson 是杠杆放大的线性系数、不单独裁决）；最终以 probe_analysis 的 CI 为准。
+    print("\n=== 架构级泛化判定（头条领稳健 Spearman；CI 裁决以下方 probe_analysis 为准）===")
+    print("  对照 dots.tts：grid 探针 Spearman −0.187(显著) / settings-matched X5 −0.216(显著)。")
+    print(f"  本次 VoxCPM：Spearman ρ={spear:+.3f}（头条）、Pearson r={pear:+.3f}（杠杆放大的线性系数，勿单独据此下结论）。")
+    if spear == spear and spear <= -0.15:
+        print("  ▶ Spearman 量级接近 dots → 可能架构级复现；**最终以下方 probe_analysis 的 Spearman 95%CI 是否排 0 为准**。")
+    elif spear == spear and spear >= 0.15:
+        print("  ▶ Spearman 同号为正 → 反相关疑为 dots.tts 实现特性，结论诚实收窄。")
     else:
-        print("▶ VoxCPM 上**近零相关** → FM 损失在 VoxCPM 上不排序 perceptual 质量(既不正也不反)；")
-        print("  反相关未跨架构复现，结论收窄为 dots.tts 特性(仍诚实；写入泛化边界 §6/§7)。")
+        print("  ▶ Spearman 近零（|ρ|<0.15）→ **稳健统计上未复现**。")
+        print("     守 C4：若 Pearson 显著而 Spearman 不显著＝高杠杆点驱动，**不得据 Pearson 宣称『架构级』**。")
+        print("     诚实选项：(a) 收窄回 dots.tts，VoxCPM 列为『方向一致但稳健量不显著』；")
+        print("     (b) 跑 VoxCPM settings-matched 复探针(X5 式)+加大 K(本次单次 SD 偏高、衰减更重)再裁。")
     print("\n→ 细化统计(双系数 95%CI / 偏相关裁 intrinsic / per-component / 高-gap 子集存活)：")
     print(f"  python alignment/probe_analysis.py --csv {out_csv} "
           f"--index candidates/out/candidates_index.jsonl --rewards reward/out/rewards.jsonl")
