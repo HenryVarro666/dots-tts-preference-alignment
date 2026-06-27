@@ -171,7 +171,9 @@ def _write_wav_atomic(path: Path, audio, sample_rate: int) -> None:
     except AttributeError:
         pass
     tmp = path.with_name(path.name + ".tmp")
-    sf.write(str(tmp), arr, sample_rate)
+    # 显式 format="WAV"：临时名是 *.wav.tmp，soundfile 默认据扩展名(.tmp)猜格式会失败
+    # (TypeError: unable to get format from file extension)；写 fresh wav 时必带，原子写才不崩。
+    sf.write(str(tmp), arr, sample_rate, format="WAV")
     os.replace(str(tmp), str(path))
 
 
