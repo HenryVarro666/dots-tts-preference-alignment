@@ -103,6 +103,29 @@ def _spearman(xs: list[float], ys: list[float]) -> float:
     return _pearson(rank(xs), rank(ys))
 
 
+def _selfcheck(pre: VoxCPMPreprocessor, batch: dict, seed0: int, dev) -> None:
+    """X10 命门自检（跑全量前的 gate）：坏接缝不该静默出一张"看起来正常"的相关性表。
+    核三件事：① **L_FM 有限正值**（接缝 E/A/权重/config 没崩，velocity-MSE 应 >0）；
+    ② **同 seed 决定论**（win/lose 共享 (z,t)+cfg_mask 的前提，接缝 G）；
+    ③ **异 seed 真有变化**（(z,t) 确由 seed 驱动，K-MC 才有意义）。
+    判据：异 seed 变化量 var 必须 ≫ 同 seed 残差 det——一次抓住"非决定论"与"RNG 被冻住"两种坏法。"""
+    import math
+    a1 = _diff_with_seed(pre, batch, seed0, dev)
+    a2 = _diff_with_seed(pre, batch, seed0, dev)        # 同 seed、同输入 → 理想下逐位相同
+    b = _diff_with_seed(pre, batch, seed0 + 1, dev)     # 仅换 seed → 应有可观变化
+    det, var = abs(a1 - a2), abs(a1 - b)
+    if not all(math.isfinite(x) for x in (a1, a2, b)):
+        raise SystemExit(f"[selfcheck] ✗ L_FM 非有限值 (a1={a1}, b={b}) — 接缝 E/A/权重/config 可疑")
+    if not a1 > 0:
+        raise SystemExit(f"[selfcheck] ✗ L_FM 非正 ({a1:.6g}) — velocity-MSE 应 >0，疑 loss/diff 取错量（接缝 E）")
+    if var <= max(1e-4, 5 * det):
+        raise SystemExit(
+            f"[selfcheck] ✗ RNG 失效：异 seed 变化 {var:.6f} ≤ 5×同 seed 残差 {det:.6f}\n"
+            f"  → 要么同 seed 不决定论（接缝 G：cfg_mask/z/t 未被 manual_seed 固定），"
+            f"要么 (z,t) 没真正随 seed 变（MC 无意义）。")
+    print(f"[selfcheck] ✓ L_FM 有限正值({a1:.5f}) | 同 seed 残差 {det:.2e}(应≈0) | 异 seed 变化 {var:.4f}(应≫残差)")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description="VoxCPM 探针：diffusion FM 损失是否为有效隐式奖励(架构级泛化)")
     ap.add_argument("--ckpt", default="openbmb/VoxCPM2")
@@ -112,6 +135,8 @@ def main() -> None:
     ap.add_argument("--seed0", type=int, default=20260625)
     ap.add_argument("--out-csv", default="alignment/out/probe_per_pair_voxcpm.csv",
                     help="逐对结果落盘(列同 probe_per_pair.csv → 直接喂 probe_analysis.py)")
+    ap.add_argument("--selfcheck", action="store_true",
+                    help="只跑命门自检(决定论/RNG有效/L_FM有限正值)在第一对上并退出，不跑全量——冒烟/gate 用")
     args = ap.parse_args()
 
     dev = _device()
@@ -121,6 +146,14 @@ def main() -> None:
     rows = list(read_jsonl(Path(args.pairs)))[: args.n]
     if not rows:
         raise SystemExit(f"pairs 空: {args.pairs}")
+
+    # ---- 命门自检：每次跑全量前都 gate 一遍（仅 3 次前向，开销可忽略）；--selfcheck 则只自检后退出 ----
+    r0 = rows[0]
+    wb0 = _to_device(pre.collate([pre.process(str(r0["fid"]), r0["text"], r0["win_audio"])]), dev)
+    _selfcheck(pre, wb0, args.seed0, dev)
+    if args.selfcheck:
+        print("[selfcheck] --selfcheck 指定：自检通过、退出（未跑全量）。")
+        return
 
     reward_gaps: list[float] = []      # reward_win − reward_lose(外部奖励差)
     mc_margins: list[float] = []       # K-MC 平均的 L^lose − L^win(去噪 FM margin)
