@@ -9,7 +9,10 @@
 # 怎么做:   1) 全量探针(自带命门 gate：跑前自动校验 L_FM 有限正值 / 同 seed 决定论 / 异 seed 有变化，
 #              坏接缝在此 fail-fast，不会静默出错表)；2) probe_analysis 出双系数 CI / per-component /
 #              高-gap 子集；3) 把 CSV+log+报告拷进**带时间戳目录**，永不被下次覆盖。
-#   用法:   bash run_x10.sh [GPU] [CKPT] [N] [K]    # 默认 GPU=0, CKPT=openbmb/VoxCPM2, N=188, K=16
+#   用法:   bash run_x10.sh [GPU] [CKPT] [N] [K] [PAIRS]   # 默认 GPU=0, CKPT=openbmb/VoxCPM2, N=188, K=16
+#           confound-free 复测(settings-matched，强于 grid)：
+#             bash run_x10.sh 0 openbmb/VoxCPM2 188 32 pairs/out/pairs_settings_matched.jsonl
+#           (自动用 rewards_fixed.jsonl、输出/归档加 _sm tag 不覆盖 grid 结果)
 # 为什么这么设计: 只跑一次模型加载——全量探针内部已自 gate(同一 loaded model)，无需再单独 --selfcheck
 #           二次加载 5GB 权重；结果全程落盘(--out-csv / --out / tee / 时间戳归档)，兑现「实验结果必存」。
 # 前置:     VoxCPM 可 import(setup_env 已挂 site-packages .pth，或 export VOXCPM_REPO 指向 repo 根)；
@@ -26,13 +29,21 @@ if [[ -f ".venv/bin/activate" ]]; then source ".venv/bin/activate"; fi
 GPU="${1:-0}"; export CUDA_VISIBLE_DEVICES="${GPU}"
 CKPT="${2:-openbmb/VoxCPM2}"
 N="${3:-188}"; K="${4:-16}"
-PAIRS="pairs/out/pairs_best_worst.jsonl"
+PAIRS="${5:-pairs/out/pairs_best_worst.jsonl}"   # 第5参可传 pairs_settings_matched.jsonl 做 confound-free 复测
+
+# settings-matched 对：reward 取 X5 的 rewards_fixed.jsonl、setting_gap≡0(probe_analysis 自动跳 confound)；
+# 输出/归档名带 tag，settings-matched 复测不覆盖 grid 探针结果。
+if [[ "${PAIRS}" == *settings_matched* ]]; then
+  TAG="voxcpm_sm"; REWARDS="reward/out/rewards_fixed.jsonl"
+else
+  TAG="voxcpm";    REWARDS="reward/out/rewards.jsonl"
+fi
 
 STAMP="$(date +%Y%m%d_%H%M%S)"
-CSV="alignment/out/probe_per_pair_voxcpm.csv"
-LOG="alignment/out/probe_voxcpm_run.log"
-RPT="results/out/probe_voxcpm_analysis.txt"
-ARCH="results/out/x10_voxcpm_${STAMP}"
+CSV="alignment/out/probe_per_pair_${TAG}.csv"
+LOG="alignment/out/probe_${TAG}_run.log"
+RPT="results/out/probe_${TAG}_analysis.txt"
+ARCH="results/out/x10_${TAG}_${STAMP}"
 mkdir -p "$(dirname "${CSV}")" "$(dirname "${RPT}")" "${ARCH}"
 
 echo "[X10] GPU=${GPU}  CKPT=${CKPT}  N=${N}  K=${K}  pairs=${PAIRS}"
@@ -47,7 +58,7 @@ python alignment/probe_fm_reward_voxcpm.py --ckpt "${CKPT}" --pairs "${PAIRS}" \
 echo "[X10] 2/3 probe_analysis -> ${RPT}"
 python alignment/probe_analysis.py --csv "${CSV}" \
   --index candidates/out/candidates_index.jsonl \
-  --rewards reward/out/rewards.jsonl \
+  --rewards "${REWARDS}" \
   --out "${RPT}"
 
 # ---- 3) 归档：CSV + 运行 log + 分析报告 拷进带时间戳目录，永不被下次覆盖 ----
