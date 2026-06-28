@@ -1,0 +1,51 @@
+==== probe_analysis  (n=188 对) ====
+
+[独立性] distinct fid(prompt) 数 = 188 / 188 对  (1 对/prompt，prompt 级独立(但单说话人))
+
+[C4 headline] FM_margin vs reward_gap:
+  Pearson  r=-0.279  (r²=0.078)  95%CI[-0.438,-0.088]  显著(CI 排除 0)
+  Spearman ρ=-0.087  (ρ²=0.008)  95%CI[-0.248,+0.067]  不显著(CI 含 0)
+  → 稳健量(Spearman) ρ²=0.8% 才是该领的头条；Pearson/Spearman 比值=3.20（>2 ⇒ 高杠杆点主导线性系数，C4 成立）
+
+[binomial] mc_margin>0 的 96/188=0.511 vs 0.5 双侧 p=0.827  平均 win_rate=0.463  → 与 0.5 无显著差（）
+
+[C4 杠杆]:
+  删 top-5% |reward_gap|(10 对)后 Pearson=-0.134（原 -0.279）
+  留一法最大单点影响：删 #125(fid=LJ001-0133, reward_gap=+2.80) 使 Pearson 变 +0.041
+
+[X1 高-gap 子集存活] 回应审稿『win_rate 0.47 大半 near-tie』——按 |reward_gap| 分层、只看真有质量差的非平局子集：
+  全集(n=188):                         Pearson r=-0.279 95%CI[-0.438,-0.088] 显著(CI 排除 0) | Spearman ρ=-0.087 95%CI[-0.248,+0.067] 不显著(CI 含 0)
+  top-50%(>中位数)(|reward_gap|≥1.390, n=94): Pearson r=-0.347 95%CI[-0.545,-0.086] 显著(CI 排除 0) | Spearman ρ=-0.187 95%CI[-0.418,+0.052] 不显著(CI 含 0)
+    → 非平局子集 Spearman CI 含 0 → 反相关在高-gap 子集未存活，可能是 near-tie 产物或子集样本太少，§6.7 需更大 N 复核
+  top-25%(>上四分位)(|reward_gap|≥1.878, n=47): Pearson r=-0.378 95%CI[-0.608,-0.107] 显著(CI 排除 0) | Spearman ρ=-0.285 95%CI[-0.556,+0.016] 不显著(CI 含 0)
+    → 非平局子集 Spearman CI 含 0 → 反相关在高-gap 子集未存活，可能是 near-tie 产物或子集样本太少，§6.7 需更大 N 复核
+
+[C1/DA 正确的 confound 测] corr(FM_margin, 各 setting_gap)  (join 成功 188/188):
+  guidance_scale: r=+0.214  95%CI[+0.095,+0.335]  显著(CI 排除 0)
+  num_steps     : r=-0.168  95%CI[-0.287,-0.032]  显著(CI 排除 0)
+  speaker_scale : r=+0.214  95%CI[+0.095,+0.335]  显著(CI 排除 0)
+  （审稿人指出：该测的是 FM_margin×setting_gap，不是 reward_gap×setting_gap）
+
+[C1/C5 偏相关（裁决 intrinsic）] corr(FM_margin, reward_gap | guidance,num_steps,speaker):
+  partial Pearson  r=-0.297  95%CI[-0.454,-0.110]  显著(CI 排除 0)
+  partial Spearman ρ=-0.078  95%CI[-0.250,+0.063]  不显著(CI 含 0)
+  → partial Pearson 与 partial Spearman 同符号、显著性不一致：§6.7 需并报两者并解释差异
+  Bonferroni/14(α=0.0036, 99.64%CI)[-0.514,-0.005] → partial r 过 Bonferroni/14 校正(CI 上界<0)
+  原始 Pearson=-0.279 → 控住设置后 -0.297（基本不变 → 反相关 intrinsic 站得住）
+  TOST(|ρ|<0.1): 不通过
+  非线性(NFE²)设定: partial r=-0.301 95%CI[-0.455,-0.113] 显著(CI 排除 0)（线性 -0.297 → 加 num_steps² 后 -0.301，方向/显著不变）
+  注：偏相关 intrinsic 裁决以线性设定为条件；决定性的非参关闸是 X5 settings-matched(setting_gap≡0，消线性+非线性+交互)。
+
+[R2/R3 per-component] corr(FM_margin, 各分量 gap)  (join 188/188)：
+  WER   _gap: r=+0.436  95%CI[+0.075,+0.646]  显著(CI 排除 0)
+  SIM   _gap: r=-0.396  95%CI[-0.628,-0.105]  显著(CI 排除 0)
+  UTMOS _gap: r=-0.172  95%CI[-0.396,+0.080]  不显著(CI 含 0)
+  （看反相关是不是只是 FM-vs-WER；告诉社区是『弃 FM-as-reward』还是『只修 reward 组成』）
+  [B3/SIM-HEDGE SIM_gap 杠杆诊断] 复用头条同款 trim-top-5% + LOO：
+    全集 SIM_gap r=-0.396；删 top-5% |SIM_gap|(10 对)后 r=-0.092 95%CI[-0.433,+0.168] 不显著(CI 含 0)
+    留一法最大单点：删 #125 使 SIM_gap r 变 +0.078
+    → trim 后塌/转不显著：单说话人 LJSpeech 近-ceiling、判别力弱的 SIM_gap 由少数杠杆对带动，退役为带 hedge 的次要佐证；承重证据放更具判别力的 UTMOS_gap 与方向明确的 WER_gap
+
+[B6 split-half] CSV 无 per_draw_json 列，跳过（如需：让 probe_fm_reward.py 落逐 draw 序列）
+
+==== 据此改 §6.7：偏相关存活→保留 intrinsic(但头条换 Spearman)；偏相关塌→改『under-powered/部分 grid 驱动』 ====
