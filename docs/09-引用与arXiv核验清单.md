@@ -40,19 +40,19 @@
 | VITS（Kim et al., 2021） | **2106.06103** | Conditional VAE with Adversarial Learning for End-to-End TTS | §1 背景 |
 | FastSpeech2（Ren et al., 2021） | **2006.04558** | FastSpeech 2: Fast and High-Quality End-to-End Text to Speech | §1 背景 |
 
-## C. 本研究的两个目标模型 — 已核验，但 **VoxCPM 版本/年份需作者确认** ⚠️
+## C. 本研究的两个目标模型 — 已核验，VoxCPM 版本 **已锁定 = VoxCPM2** ✅
 
 | 系统 | arXiv id | 标题 | 状态 |
 |---|---|---|---|
 | **dots.tts**（rednote-hilab） | **2606.07080** | dots.tts Technical Report | ✓ 核验命中；正文「dots.tts (…, 2026)」一致 |
-| **VoxCPM**（原版，OpenBMB） | **2509.24650** | VoxCPM: Tokenizer-Free TTS for Context-Aware Speech Generation… | ✓ 核验命中（**2025**） |
-| **VoxCPM2**（2B，OpenBMB） | **2606.06928** | VoxCPM2 Technical Report | ✓ 核验命中（**2026**、2B、MiniCPM-4） |
+| **VoxCPM2**（2B，OpenBMB）✅采用 | **2606.06928** | VoxCPM2 Technical Report | ✓ 核验命中（**2026**、2B、tokenizer-free diffusion-AR）；**X10 实跑版本** |
+| ~~VoxCPM 原版（0.5B）~~ 未用 | ~~2509.24650~~ | VoxCPM: Tokenizer-Free TTS… (2025) | 不引——X10 代码硬拒 v1 |
 
-> **⚠️ 待作者决策（X10 用的是哪版？）**：正文 §2.3/§6.7 写「VoxCPM (OpenBMB, **2026**)」并描述 **2B / MiniCPM-4 backbone**——这与 **VoxCPM2 (2606.06928, 2026, 2B)** 吻合，而原版 VoxCPM (2509.24650) 是 **2025 / 0.5B**。
-> **动作**：核对 `参考代码/VoxCPM`（远程机）实际 clone 的版本——
-> - 若 X10 探针用的是 **2B/VoxCPM2** → 引用 **2606.06928**、年份保持 2026；
-> - 若用的是**原版 VoxCPM 0.5B** → 引用 **2509.24650**、把正文年份改为 **2025**、并核对「2B」表述（应为 0.5B）。
-> 在确认前，正文「2B」与「2026」的搭配 **〔待核实〕**。
+> **✅ 已从代码定版（非作者凭记忆）**：X10 适配器**硬性要求 VoxCPM2**——
+> `run_x10.sh` / `probe_fm_reward_voxcpm.py` / `setup_env.sh` 默认 `--ckpt openbmb/VoxCPM2`；
+> `voxcpm_preprocess.py:222` `from voxcpm.model.voxcpm2 import VoxCPM2Model` 且 `isinstance` 断言、**显式报错拒绝 v1**（"只适配 VoxCPM2…请用 openbmb/VoxCPM2"）。
+> ⇒ 引用 **2606.06928**、正文「2B / 2026」**正确**；原版 0.5B (2509.24650) **不引**（refs.bib 已删该条）。
+> **一处已修正**：正文原写 VoxCPM「on a MiniCPM-4 backbone」——那是**原版 0.5B** 的架构，**VoxCPM2 报告未确认 MiniCPM-4 backbone**（仅述 hierarchical diffusion-AR / tokenizer-free / 2B）。已据此把 §2.3 与 §6.7 的 backbone 措辞改为已核验的「tokenizer-free, hierarchical diffusion-AR + own AudioVAE」，并将全文 27 处「VoxCPM」统一为 **VoxCPM2**。
 
 ## D. 非 arXiv / 无需 arXiv 的引用
 
@@ -75,6 +75,6 @@
 
 1. **`.bib` 已生成 → `refs.bib`**（仓库根，33 条；title/author 直接从 arXiv meta 抓取、非凭记忆）。直接 `\bibliography{refs}` 引用即可。其中 `voxcpm2025`/`voxcpm22026` 两条**二选一保留**（见 C 节），`chen2024valle2`/`chen2024f5tts` 已拆分。Qwen3-TTS / Williams1992-REINFORCE 仍需**手动**补非-arXiv 条目。
 2. **拆分 Chen 2024 引用冲突**：正文 `(Chen et al., 2024)` 现同时指 VALL-E 2 与 F5-TTS → 改为 **`Chen et al., 2024a`（VALL-E 2）/ `2024b`（F5-TTS）**，并核对两处 §2.1/§2.2 行内 key。
-3. **定 VoxCPM 版本**（见 C 节 ⚠️）：核 `参考代码/VoxCPM` 版本 → 锁定 2509.24650 vs 2606.06928、并统一正文「2025/2026」「0.5B/2B」。
+3. ~~定 VoxCPM 版本~~ **✅ 已完成**：从 X10 代码锁定 = **VoxCPM2 (2606.06928)**；正文 27 处统一为「VoxCPM2」、删 MiniCPM-4 backbone 臆断、refs.bib 删原版条目。
 4. **Qwen3-TTS 官方链接** 〔待核实〕。
 5. 全文 `(Author, YEAR)` → `\citep{key}`（投会模板）替换；删除 L7 头部注释里的 `[CIT]/[*-placeholder]` 占位说明。
