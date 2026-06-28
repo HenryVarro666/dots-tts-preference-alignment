@@ -32,6 +32,31 @@
 - **base → dpo_weronly**：WER **0.103 → 0.115**（≈base，**非最低**）、UTMOS **4.309 → 4.112**（略降）、SIM 0.852（守住）。**大致守住但 WER-only 没 hack 成**（RQ3，见 §5）。
 - **base → sft**：WER **0.103 → 0.545**（5× 恶化）、SIM **0.891 → 0.673**、UTMOS 4.309 → 3.917。**崩坏**（反转，见 §3）。
 - **base → dpo_multiobj**：WER **0.103 → 0.752**、SIM **0.891 → 0.365**、UTMOS **4.309 → 2.841**，外加 **25% 生成时崩**（immediate-EOS）。**灾难崩坏**。
+---
+
+### 1.1 X4 · SFT-target 梯度对照（在 off-manifold 轴上滑动 target，n=100×4 · 同数据/同 SFT/同步数 · 唯一变量 = 模仿对象）
+
+> **X4 = SFT-target gradient control**：**四臂全 n=100、0% 生成失败、同数据规模 / 同 SFT 管线 / 同步数**，**唯一变量 = SFT target 在 off-manifold 轴上的位置**（模型去模仿哪一段音频）。`sft` 即主表那一臂（拉向 **reward-winner**；反相关发现指 reward-winner 携更高 `L_FM` = **最 off-manifold**）。X4 自带 base 参照（WER 0.128；与主表 base 0.103 略异、属**不同 run**，X4 四臂同管线内部自洽、组内可比）。
+
+**Table 1-X4. SFT-target gradient**（offline，n=100/臂，**0% 生成失败**，bootstrap 95% CI；WER↓ 越低越好、SIM/UTMOS↑ 越高越好）。
+
+| 臂 | SFT target（off-manifold 程度） | WER ↓ | SIM ↑ | UTMOS ↑ | n | 失败率 | 裁决 |
+|---|---|---|---|---|---|---|---|
+| **base**（X4 参照） | — | 0.128 [0.089, 0.174] | 0.867 | 4.221 | 100 | **0%** | 参照 |
+| **sft**（=主表臂） | **reward-winner（最 off-manifold）** | **0.607 [0.283, 1.197]** | 0.658 | 3.818 | 100 | **0%** | **崩坏**（vs-base WER\*、SIM†、UTMOS†） |
+| **sft_losers** | reward-loser（off-manifold） | **0.569 [0.144, 1.194]** | 0.771 | 3.952 | 100 | **0%** | **崩坏**（vs-base SIM†、UTMOS†） |
+| **sft_random** | random 候选（中 off-manifold） | 0.138 [0.101, 0.182] | 0.832 | 4.035 | 100 | **0%** | 轻微（WER≈base；vs-base SIM\*、UTMOS†） |
+| **sft_groundtruth** | 真实录音（**on-manifold**） | **0.087 [0.066, 0.113]** | 0.857 | 4.337 | 100 | **0%** | **最佳、优于 base**（vs-base WER†↓、UTMOS†↑） |
+
+> 显著性标注：**† = vs-base Bonferroni 校正后仍显著；\* = vs-base 名义显著（未过 Bonferroni）**。SIM/UTMOS 为点估计（X4 仅 WER 带 CI）。
+
+**单调梯度（按 target off-manifold 程度，三指标全单调；n=100 各、0% 失败）**：
+- **WER↓**：winners 0.607 ≈ losers 0.569 ≫ random 0.138 > groundtruth 0.087
+- **SIM↑**：winners 0.658 < losers 0.771 < random 0.832 < groundtruth 0.857
+- **UTMOS↑**：winners 3.818 < losers 3.952 < random 4.035 < groundtruth 4.337
+
+**判读（解 caveat 1：是 off-manifold target、不是小数据 SFT 不稳）**：四臂**同数据规模 + 同 SFT 管线 + 同步数**，唯一变量是 target 的 off-manifold 位置——**却只有 off-manifold target（winners / losers）崩坏，而 on-manifold target（groundtruth）追平/反超 base**，且退化随 target off-manifold 程度在三指标上**单调加剧**。故 `sft` 退化的因是**off-manifold 的 target 分布本身**、**而非**「188 单说话人小数据 SFT 过拟合 / 灾难性遗忘」的不稳。四臂**全 0% 生成失败**，进一步排除「失败率混淆」（纯 graded 退化、无生成时崩成分）。这把 caveat 1 由**开放混淆**转为**受控已决**结论。**校准（不过度声称）**：组内（winners vs losers）排序噪声极大、**CI 大幅重叠**——**不声称 winners 严格劣于 losers**；干净表述 = 「**{winners, losers} off-manifold → 崩；{random, groundtruth} 近/在流形 → 不崩；随 off-manifold 程度单调**」。`sft_groundtruth` 在 WER（↓）/ UTMOS（↑）上**Bonferroni-显著优于 base**（†）是真实加成——**on-manifold 的 SFT 反而有益**。注意：本条 caveat 1（**SFT-target vs 小数据不稳**）与 **caveat 3（LJ002 子集聚集）属不同议题**，互不替代、互不推翻。
+
 
 ---
 
@@ -83,7 +108,7 @@
 > **向 automatic-reward 选出的自生成候选（off-manifold）做 self-training，会退化模型，与训练目标（SFT/DPO）无关**；唯有训向真实 / 似然对齐目标（`open_soar`）才有效。
 
 这比 [`06`](06-核心发现-FM损失与奖励错配.md) 原诊断（「DPO-FM 偏好-似然反向」L2 失败）**更深一层**：`sft` 不做 win/lose 对比却仍崩，说明毒源是**目标分布本身（off-manifold winner）**，而非 DPO 的对比机制。建设性结论由此**收窄**：从「`sft` & `open_soar` 都安全」→「**只有 `open_soar` 安全；`sft` 同样崩**」。
-（此论点为**强假设**，须严守 §6 caveat 1——`sft` 崩与小数据 SFT 过拟合尚未干净分离。）
+（此论点原为**强假设**；现经 **X4 SFT-target 梯度对照**（§1.1，n=100×4、同数据/同 SFT/同步数、唯变 target 流形位置）**确证**——唯 off-manifold target（winners/losers）崩、on-manifold groundtruth 追平/反超 base、随 off-manifold 程度**单调**，故 `sft` 崩源于 **off-manifold target** 而非小数据 SFT 不稳，caveat 1 由开放混淆转受控已决。**校准**：组内 winners vs losers 序噪声大、CI 重叠，**不声称 winners 严格劣 losers**。）
 
 ---
 
@@ -114,7 +139,7 @@
 
 ## 6. 全部 caveat（5 条，务必如实，须写进 PAPER §5/§6/§7）
 
-1. **`sft` 崩坏与「小数据 SFT 过拟合 / 灾难性遗忘」混淆**：188 单说话人 SFT 本就易过拟合 / 遗忘；干净判别需 **SFT-on-random-candidates vs SFT-on-reward-winners** 对照（future work）。`open_soar`（**同规模微调、同优化器族**）不崩是**部分对照**，指向「**目标分布（off-manifold winner）**」而非单纯「SFT 不稳」——但**未完全排除**，§3.1 新论点仍是强假设。**另须显式点名跨臂步预算不对称**：`open_soar` 与两个 DPO 臂均 **600 步**、而 `sft` 为 **1500 步**（同规模 / 同优化器族**但步预算不同**），故「`open_soar` 安全 vs `sft` 崩」原则上仍可能被步数差混淆。该步差混淆由**步数匹配的 X4（`sft_groundtruth`@1500、on-manifold、同 SFT 目标、仅变 target 流形位置）**在跑出后关闸消除；佐证：`dpo_multiobj` **仅 600 步即灾难崩**、而唯一 1500 步的 `sft` 崩坏**居中**（§3 序③，介于 ②`dpo_weronly` 与 ④`dpo_multiobj` 之间）→ **步数与崩坏非单调**，反证步数非头条驱动。
+1. **`sft` 崩坏与「小数据 SFT 过拟合 / 灾难性遗忘」混淆**：188 单说话人 SFT 本就易过拟合 / 遗忘；干净判别需 **SFT-on-random-candidates vs SFT-on-reward-winners** 对照——**该对照已由 X4（§1.1 SFT-target 梯度对照）跑出**：四臂 n=100、同数据/同 SFT/同步数，唯 off-manifold target（winners/losers）崩、on-manifold groundtruth 追平/反超 base、退化随 off-manifold 程度**单调**。`open_soar`（**同规模微调、同优化器族**）不崩本是**部分对照**，X4 进一步把因坐实为「**off-manifold 的目标分布**」而非「SFT 不稳」——**caveat 1 由开放混淆转为受控已决**，§3.1 新论点由强假设升为受控结论。**校准**：组内 winners vs losers 序噪声大（CI 重叠），**不声称 winners 严格劣 losers**；干净表述仍是「{winners,losers} 崩、{random,groundtruth} 不崩、单调」。**另须显式点名跨臂步预算不对称**：`open_soar` 与两个 DPO 臂均 **600 步**、而 `sft` 为 **1500 步**（同规模 / 同优化器族**但步预算不同**），故「`open_soar` 安全 vs `sft` 崩」原则上仍可能被步数差混淆。该步差混淆由**步数匹配的 X4（`sft_groundtruth`@1500、on-manifold、同 SFT 目标、仅变 target 流形位置）**现由**已跑出的 X4**（§1.1，`sft_groundtruth`@1500、on-manifold、同 SFT 目标、仅变 target 流形位置，**追平/反超 base**）关闸消除；佐证：`dpo_multiobj` **仅 600 步即灾难崩**、而唯一 1500 步的 `sft` 崩坏**居中**（§3 序③，介于 ②`dpo_weronly` 与 ④`dpo_multiobj` 之间）→ **步数与崩坏非单调**，反证步数非头条驱动。
 2. **`dpo_multiobj` 的 25% 失败是 immediate-EOS / no-payload 的「生成时子集崩」**，与 graded（Spearman −0.216）**不同质**；崩坏量级超出弱单调相关的预测。但**「graded vs optimization divergence」证据不一**：X2/X3 训练曲线 `fm_w` 全程稳 ~0.74、**未二次爆**、margin 仍小 0.065 → **训练未发散**（非 run0 式训练时爆炸）；交叉表大-gap 对 FM-reward 更脱钩（34% vs 48%）→ **偏 divergence**。**合判 = 训练温和但模型已 off-manifold 漂移 → 部分 prompt 生成时崩**；**保守报告，不径直断言 optimization divergence**，待人工 TB-curve + 失败句听测裁决。这**强化 off-manifold 论点**：错向梯度不靠炸训练指标（`fm_w` 未再爆、margin 仍小）、而是悄悄把模型推离流形。
 3. **失败聚于 `LJ002` 子集**（`sft`、`dpo_multiobj` 皆然）须**诚实归因**：评测集（`eval_big` 取前 100 held-out）**本身 89% 为 LJ002**（89/100），故聚集**部分因 LJ002 占评测主体**；但组内 **LJ001 0/11（0%）vs LJ002 25/89（28%）**（小 n、p≈0.02）仍是真实 prompt 依赖，失败样本仅**轻微偏长（text 105 vs 94 = 1.12×）、无位置偏置（后段 52%）**——**不写成「长 prompt 触发」**。仍**须专项排查**（prompt 内容 / 评测集排序 / fid 块边界）；这也是 n=3 冒烟（全 `LJ001`）漏掉崩坏的直接原因。
 4. **崩坏臂 CI 极大**（`sft` WER **[0.25, 1.06]**、`dpo_multiobj` WER **[0.57, 1.04]**、UTMOS **[2.58, 3.11]**）、**单说话人 LJSpeech**、**无人类听测（ABX/MOS）**——量级**仅供方向**，不可当精确效应。
@@ -124,7 +149,7 @@
 
 ## 7. 下一步（future work）
 
-1. **SFT-random 对照**（裁决 §3.1 新论点 / caveat 1）：跑 **SFT-on-random-candidates vs SFT-on-reward-winners** —— 若 random 不崩、reward-winner 崩，则「off-manifold 目标」为因，新论点坐实；若两者都崩，则混入「小数据 SFT 不稳」，须降级表述。
+1. ~~**SFT-random 对照**（裁决 §3.1 新论点 / caveat 1）~~ **✓ 已完成（见 §1.1 · X4 SFT-target 梯度对照）**：四臂 n=100、同数据/同 SFT/同步数，唯一变量 = target off-manifold 位置——**random WER 0.138 ≈ base、winners/losers 崩、groundtruth（on-manifold）WER 0.087 反超 base**，退化随 off-manifold 程度**单调** → 「off-manifold 目标为因」**坐实**、caveat 1 由混淆转**受控已决**（非「小数据 SFT 不稳」）。**校准**：组内 winners vs losers 序噪声大（CI 重叠），**不声称 winners 严格劣 losers**。
 2. **`dpo_multiobj` 生成时崩诊断（X2/X3 已部分回填）**：训练曲线已查——`fm_w` 全程稳 ~0.74、**未二次爆**、reward-margin 仍小 0.065 → **训练未发散**；交叉表大-gap 对 FM-reward 更脱钩（34% vs 48%）→ 偏 divergence；**合判 = 训练温和但 off-manifold 漂移 → LJ002 子集生成时崩**。**待补**：人工 TB-curve 复核 + 失败句听测裁决，最终落定 **graded degradation vs optimization divergence**（caveat 2），不径直坐实。
 3. **`LJ002` 聚集排查**（caveat 3）：核对失败句的 **prompt 长度 / 内容 / 评测集排序 / fid 块边界**，判定崩坏是否与某结构性因素绑定，而非均匀；据此决定是否需重排评测集 / 扩 n。
 4. ~~**`probe_analysis.py` 偏相关**（intrinsic 裁决）~~ **✓ 已完成（见 §8）**：`corr(FM-margin, reward-gap | guidance, num_steps, speaker_scale)` = **partial −0.392、CI[−0.548,−0.209]、显著**，控住全部生成 knob 仍存活 → **裁决：intrinsic（反相关非 grid effect）**；num_steps r=−0.237 是温和混淆但被偏相关控住。**C6 守住**：intrinsic ≠ intrinsic-to-`L_FM`，诊断仍 preference-likelihood/off-manifold。**X5 settings-matched re-probe 进一步以最强设计（setting_gap≡0、配对无条件控住设置）复核确认 intrinsic、头条改 Spearman ρ=−0.216，见 §8.5。**
