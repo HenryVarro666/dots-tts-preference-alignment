@@ -467,7 +467,7 @@ Two findings we report honestly as negatives (details in §5.3, §6.4, §6.7): t
 | Gao et al., 2023 | Scaling Laws for Reward Model Overoptimization. ICML. arXiv 2210.10760 — ✓核验（refs.bib）. |
 | Lipman et al., 2023 | Flow Matching for Generative Modeling. ICLR. arXiv 2210.02747 — ✓核验（refs.bib）. |
 | Anastassiou et al., 2024 | Seed-TTS: A Family of High-Quality Versatile Speech Generation Models. arXiv. |
-| Qwen3-TTS | Qwen 技术报告/blog（DPO + GSPO）；**无独立 arXiv**——GSPO 另引 arXiv 2507.18071（✓核验）。 |
+| Qwen3-TTS | Qwen3-TTS Technical Report（DPO + GSPO）, **arXiv 2601.15621** — ✓核验（2026-01）；GSPO 另引 arXiv 2507.18071（✓核验）。 |
 | dots.tts, 2026 | rednote-hilab & SJTU X-LANCE. dots.tts Technical Report, **arXiv 2606.07080** — ✓核验（title+author 见 refs.bib）。 |
 | VoxCPM2, 2026 | OpenBMB. VoxCPM2 Technical Report (2B), **arXiv 2606.06928** — ✓核验（X10 实跑版本；原版 0.5B VoxCPM 2509.24650 未用）。 |
 | Wang et al., 2023 | Neural Codec Language Models are Zero-Shot TTS (VALL-E). arXiv 2301.02111 — ✓核验（refs.bib）. |
