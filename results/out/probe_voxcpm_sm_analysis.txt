@@ -1,0 +1,41 @@
+==== probe_analysis  (n=188 对) ====
+
+[独立性] distinct fid(prompt) 数 = 188 / 188 对  (1 对/prompt，prompt 级独立(但单说话人))
+
+[C4 headline] FM_margin vs reward_gap:
+  Pearson  r=-0.461  (r²=0.213)  95%CI[-0.605,-0.285]  显著(CI 排除 0)
+  Spearman ρ=-0.266  (ρ²=0.071)  95%CI[-0.413,-0.112]  显著(CI 排除 0)
+  → 稳健量(Spearman) ρ²=7.1% 才是该领的头条；Pearson/Spearman 比值=1.73
+
+[R6 置换检验] 标签重排 B=10000（1 对/prompt → cluster-respecting）：
+  Spearman 双侧 p_perm=0.0003 (显著)  |  Pearson 双侧 p_perm=0.0001 (显著)
+  → 非参 p 与 bootstrap CI 互证、不靠分布假设；头条仍领 Spearman。
+
+[binomial] mc_margin>0 的 80/188=0.426 vs 0.5 双侧 p=0.049  平均 win_rate=0.394  → 显著偏离 0.5（不能写 at chance）
+
+[C4 杠杆]:
+  删 top-5% |reward_gap|(10 对)后 Pearson=-0.437（原 -0.461）
+  留一法最大单点影响：删 #2(fid=LJ001-0003, reward_gap=+3.15) 使 Pearson 变 +0.028
+
+[X1 高-gap 子集存活] 回应审稿『win_rate 0.47 大半 near-tie』——按 |reward_gap| 分层、只看真有质量差的非平局子集：
+  全集(n=188):                         Pearson r=-0.461 95%CI[-0.605,-0.285] 显著(CI 排除 0) | Spearman ρ=-0.266 95%CI[-0.413,-0.112] 显著(CI 排除 0)
+  top-50%(>中位数)(|reward_gap|≥1.632, n=94): Pearson r=-0.478 95%CI[-0.654,-0.272] 显著(CI 排除 0) | Spearman ρ=-0.302 95%CI[-0.503,-0.101] 显著(CI 排除 0)
+    → 非平局子集 Spearman 仍显著且 |ρ|=0.302 ≥ 全集 0.266 → 坐实：反相关非 near-tie 产物，真有质量差时不弱反更强
+  top-25%(>上四分位)(|reward_gap|≥2.001, n=47): Pearson r=-0.475 95%CI[-0.679,-0.237] 显著(CI 排除 0) | Spearman ρ=-0.368 95%CI[-0.633,-0.064] 显著(CI 排除 0)
+    → 非平局子集 Spearman 仍显著且 |ρ|=0.368 ≥ 全集 0.266 → 坐实：反相关非 near-tie 产物，真有质量差时不弱反更强
+
+[C1] 设置-gap join 成功太少(0/188)，跳过偏相关——检查 candidates_index 路径
+
+[R2/R3 per-component] corr(FM_margin, 各分量 gap)  (join 188/188)：
+  WER   _gap: r=+0.336  95%CI[+0.098,+0.606]  显著(CI 排除 0)
+  SIM   _gap: r=-0.673  95%CI[-0.797,-0.482]  显著(CI 排除 0)
+  UTMOS _gap: r=-0.529  95%CI[-0.687,-0.296]  显著(CI 排除 0)
+  （看反相关是不是只是 FM-vs-WER；告诉社区是『弃 FM-as-reward』还是『只修 reward 组成』）
+  [B3/SIM-HEDGE SIM_gap 杠杆诊断] 复用头条同款 trim-top-5% + LOO：
+    全集 SIM_gap r=-0.673；删 top-5% |SIM_gap|(10 对)后 r=-0.471 95%CI[-0.744,-0.028] 显著(CI 排除 0)
+    留一法最大单点：删 #176 使 SIM_gap r 变 +0.032
+    → trim 后仍显著且量级未塌：SIM_gap 反相关非少数杠杆点独撑，可作次要佐证保留
+
+[B6 split-half] CSV 无 per_draw_json 列，跳过（如需：让 probe_fm_reward.py 落逐 draw 序列）
+
+==== 据此改 §6.7：偏相关存活→保留 intrinsic(但头条换 Spearman)；偏相关塌→改『under-powered/部分 grid 驱动』 ====
