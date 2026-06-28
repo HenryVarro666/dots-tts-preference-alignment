@@ -206,6 +206,87 @@ def _sig(lo: float, hi: float) -> str:
     return "显著(CI 排除 0)" if (lo > 0 or hi < 0) else "不显著(CI 含 0)"
 
 
+def _run_selection_null(args) -> None:
+    """E1 选择伪影 / order-statistic null control（回应 Devil's Advocate 最强反驳）。读 percand_lfm.csv
+    （每候选 reward + 去噪 L_FM），裁决 ρ=−0.216 是 reward↔likelihood 耦合、还是『在近噪声 reward 上
+    best-vs-worst 选极值』的 order-statistic 伪影：
+      [candidate-level]  within-prompt 去均值 corr(reward, L_FM) over 全部候选（零极值选择）——最干净的耦合证据；
+      [Null A]           用随机准则替代 reward 做 best-vs-worst（B 次）→ ρ_real 是否落在该 null 之外（reward-specific）；
+      [Null B]           interior pairs（2nd-best vs 2nd-worst）反相关是否存活（非仅极值驱动）。
+    全 CPU、秒级；输入由 probe_fm_reward.py --emit-per-candidate 产出。"""
+    import csv as _csv
+    from collections import defaultdict
+    rows = list(_csv.DictReader(open(args.percand, encoding="utf-8")))
+    if not rows:
+        raise SystemExit(f"percand CSV 空: {args.percand}（先跑 probe_fm_reward.py --emit-per-candidate）")
+    pool: dict[str, list[tuple]] = defaultdict(list)
+    for r in rows:
+        pool[r["fid"]].append((float(r["reward"]), float(r["lfm"])))
+    fids = [f for f, c in pool.items() if len(c) >= 2]
+    _emit(f"==== [E1] selection-null  prompts(≥2 候选)={len(fids)}  candidates={len(rows)} ====\n")
+
+    def bw(scores: dict):
+        """对每 prompt 用 scores 选 best/worst，返回 (L_FM(worst)−L_FM(best), score(best)−score(worst))。"""
+        m, g = [], []
+        for f in fids:
+            c, s = pool[f], scores[f]
+            bi, wi = int(np.argmax(s)), int(np.argmin(s))
+            if bi == wi:
+                continue
+            m.append(c[wi][1] - c[bi][1])
+            g.append(float(s[bi] - s[wi]))
+        return np.array(m), np.array(g)
+
+    m, g = bw({f: np.array([x[0] for x in pool[f]]) for f in fids})
+    rho_real = _spearman(m, g)
+    _emit(f"[ρ_real] best-vs-worst by reward: Spearman ρ={rho_real:+.3f}（n={len(m)} prompts）← 应≈ headline −0.216（自洽性检查）\n")
+
+    rr, ll = [], []
+    for f in fids:
+        c = pool[f]
+        mr = sum(x[0] for x in c) / len(c)
+        ml = sum(x[1] for x in c) / len(c)
+        for rew, lf in c:
+            rr.append(rew - mr); ll.append(lf - ml)
+    rr, ll = np.array(rr), np.array(ll)
+    cl_s, cl_p, cl_perm = _spearman(rr, ll), _pearson(rr, ll), _perm_p(_spearman, rr, ll)
+    _emit(f"[candidate-level 耦合] within-prompt 去均值 corr(reward, L_FM)，全部 {len(rr)} 候选、零极值选择：")
+    _emit(f"  Spearman ρ={cl_s:+.3f}  Pearson r={cl_p:+.3f}  perm-p={cl_perm:.4f}  "
+          f"{'(显著)' if cl_perm == cl_perm and cl_perm < 0.05 else '(不显著)'}")
+    _emit("  → ρ>0（高 reward = 高 L_FM = 更 off-manifold）且 perm-p<0.05 ⇒ 耦合在候选级即成立、非极值伪影。\n")
+
+    rng = np.random.default_rng(20260628)
+    nulls = []
+    for _ in range(args.null_B):
+        ms, gs = bw({f: rng.standard_normal(len(pool[f])) for f in fids})
+        v = _spearman(ms, gs)
+        if v == v:
+            nulls.append(v)
+    nulls = np.array(nulls)
+    pA = (int(np.sum(np.abs(nulls) >= abs(rho_real))) + 1) / (len(nulls) + 1)
+    _emit(f"[Null A 随机准则选极值, B={args.null_B}] null ρ: 均值={nulls.mean():+.3f}  "
+          f"95%[{np.percentile(nulls, 2.5):+.3f},{np.percentile(nulls, 97.5):+.3f}]")
+    _emit(f"  ρ_real={rho_real:+.3f} vs null → 双侧 p={pA:.4f}  "
+          f"{'(显著: reward-specific、非通用极值伪影)' if pA < 0.05 else '(不显著: 落在极值-选择 null 内 → 收回 intrinsic、改述 extreme-selection)'}\n")
+
+    mi, gi = [], []
+    for f in fids:
+        c = sorted(pool[f], key=lambda x: x[0], reverse=True)
+        if len(c) < 4:
+            continue
+        b2, w2 = c[1], c[-2]
+        mi.append(w2[1] - b2[1]); gi.append(b2[0] - w2[0])
+    if len(mi) >= 10:
+        rho_int = _spearman(np.array(mi), np.array(gi))
+        _emit(f"[Null B interior pairs（2nd-best vs 2nd-worst）, n={len(mi)}] Spearman ρ={rho_int:+.3f}")
+        _emit("  → 仍同号(<0)显著 ⇒ 反相关非仅极值、是候选级耦合；塌→极值驱动。\n")
+    else:
+        _emit(f"[Null B] ≥4 候选的 prompt 太少({len(mi)})，跳过 interior pairs\n")
+
+    _emit("==== [E1 裁决] candidate-level 显著(同号) + Null A p<0.05 + Null B 存活 ⇒ 反相关是 reward↔likelihood 耦合、"
+          "非 order-statistic 伪影 → §6 把 caveat 升级为『已排除选择伪影』；任一不过 ⇒ 诚实降级为 extreme-selection 效应。 ====")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description="probe 统计加固（偏相关/杠杆/per-component/CI）")
     ap.add_argument("--csv", default="alignment/out/probe_per_pair.csv")
@@ -214,7 +295,20 @@ def main() -> None:
     ap.add_argument("--tost", type=float, default=0.1, help="TOST 可忽略界 |ρ|<bound 视作等价")
     ap.add_argument("--out", default=None,
                     help="把全部分析报告同时落一份文件(utf-8)；默认 None=只打 stdout、不归档（默认行为不变）")
+    ap.add_argument("--selection-null", action="store_true",
+                    help="E1：读 --percand 做 order-statistic / 选择伪影 null control（candidate-level 耦合 + 随机准则 null + interior pairs）")
+    ap.add_argument("--percand", default="alignment/out/percand_lfm.csv",
+                    help="probe_fm_reward.py --emit-per-candidate 的输出")
+    ap.add_argument("--null-B", type=int, default=1000, help="Null A 随机准则重抽次数")
     args = ap.parse_args()
+
+    if args.selection_null:
+        _run_selection_null(args)
+        if args.out:
+            Path(args.out).parent.mkdir(parents=True, exist_ok=True)
+            Path(args.out).write_text("\n".join(_REPORT_LINES) + "\n", encoding="utf-8")
+            print(f"\n[--out] 报告已归档 → {args.out}（{len(_REPORT_LINES)} 条 emit）")
+        return
 
     # ---- 读 CSV ----
     rows = []
