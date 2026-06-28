@@ -1,7 +1,7 @@
 % refs.bib — arXiv ids curl-verified (title match) 2026-06-28; authors+titles scraped live from arXiv meta tags.
 % Years follow the paper's cited venue year (may differ from arXiv submission year, e.g. Lipman flow-matching ICLR2023 / arXiv2210).
 % NOTE: Chen et al. 2024 collision is resolved here as two keys: chen2024valle2 (VALL-E 2) + chen2024f5tts (F5-TTS).
-% NOTE: VoxCPM — keep ONLY the version X10 actually used: voxcpm2025 (0.5B, 2509.24650) OR voxcpm22026 (2B, 2606.06928). Delete the other + reconcile §2.3/§6.7 wording.
+% NOTE: VoxCPM — X10 used VoxCPM2 (code hard-requires openbmb/VoxCPM2; voxcpm_preprocess rejects v1). Cite voxcpm22026 (2606.06928). Original 0.5B VoxCPM (2509.24650) intentionally NOT included.
 % Non-arXiv (add manually): Qwen3-TTS (Qwen tech report/blog); Williams1992 REINFORCE (journal, pre-arXiv); SOAR is undisclosed -> cite dots.tts (dotstts2026).
 
 @misc{rafailov2023dpo,
@@ -245,15 +245,6 @@
   eprint       = {2606.07080},
   archivePrefix= {arXiv},
   url          = {https://arxiv.org/abs/2606.07080}
-}
-
-@misc{voxcpm2025,
-  title        = {VoxCPM: Tokenizer-Free TTS for Context-Aware Speech Generation and True-to-Life Voice Cloning},
-  author       = {Zhou, Yixuan and Zeng, Guoyang and Liu, Xin and Li, Xiang and Yu, Renjie and Wang, Ziyang and Ye, Runchuan and Sun, Weiyue and Gui, Jiancheng and Li, Kehan and Wu, Zhiyong and Liu, Zhiyuan},
-  year         = {2025},
-  eprint       = {2509.24650},
-  archivePrefix= {arXiv},
-  url          = {https://arxiv.org/abs/2509.24650}
 }
 
 @misc{voxcpm22026,
