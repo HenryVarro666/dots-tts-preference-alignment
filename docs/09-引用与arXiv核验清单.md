@@ -73,7 +73,7 @@
 
 ## F. Camera-ready 动作清单（X13）
 
-1. **建 `.bib`**：按 A/B/E 表逐条录入（id 已核验，可直接用）。
+1. **`.bib` 已生成 → `refs.bib`**（仓库根，33 条；title/author 直接从 arXiv meta 抓取、非凭记忆）。直接 `\bibliography{refs}` 引用即可。其中 `voxcpm2025`/`voxcpm22026` 两条**二选一保留**（见 C 节），`chen2024valle2`/`chen2024f5tts` 已拆分。Qwen3-TTS / Williams1992-REINFORCE 仍需**手动**补非-arXiv 条目。
 2. **拆分 Chen 2024 引用冲突**：正文 `(Chen et al., 2024)` 现同时指 VALL-E 2 与 F5-TTS → 改为 **`Chen et al., 2024a`（VALL-E 2）/ `2024b`（F5-TTS）**，并核对两处 §2.1/§2.2 行内 key。
 3. **定 VoxCPM 版本**（见 C 节 ⚠️）：核 `参考代码/VoxCPM` 版本 → 锁定 2509.24650 vs 2606.06928、并统一正文「2025/2026」「0.5B/2B」。
 4. **Qwen3-TTS 官方链接** 〔待核实〕。
