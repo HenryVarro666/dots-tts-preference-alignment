@@ -72,11 +72,24 @@ def main() -> None:
         t0 = time.perf_counter()
         first_packet = None
         for tid in token_ids:
-            chunk = session.push_text_token(int(tid))
+            # 模型可能在 text 中途自报 EOS（崩坏臂 sft/dpo_multiobj 的早-EOS 常见）。一旦 EOS，
+            # 再 push_text_token 会抛 "already reached EOS, call finish_text()"——须停止喂剩余 text、
+            # 改由 finish_text() flush 音频尾部。两道保险（RISK⑫：DoubleStreaming API 版本敏感）：
+            #   ① 正路：push 后查 _state.end_flag（runtime 文档化的 EOS 标志）提前 break、免抛异常；
+            #   ② 兜底：若 end_flag 不可达/改名，靠 push 抛出的错误消息识别 EOS 再 break。
+            try:
+                chunk = session.push_text_token(int(tid))
+            except RuntimeError as e:
+                if "reached EOS" in str(e):
+                    break
+                raise
             if chunk is not None:
                 if first_packet is None:
                     first_packet = time.perf_counter() - t0   # 首包延迟
                 chunks.append(chunk.detach().cpu())
+            st = getattr(session, "_state", None)
+            if st is not None and getattr(st, "end_flag", False):
+                break
         for chunk in session.finish_text():
             if chunk is not None:
                 chunks.append(chunk.detach().cpu())
