@@ -14,6 +14,11 @@ Supporting documentation for **[*When Likelihood Disagrees with Quality*](../PAP
 |---|---|
 | [`08-实验结果-Table1.md`](08-实验结果-Table1.md) | **All result tables** — the 11-arm offline main table (single consolidated batch, bootstrap CIs), the streaming RQ2 table (TTFA / streaming WER+UTMOS / decode-path discrepancy), the reward-hacking RQ3 table, and the X4 SFT-target off-manifold gradient. |
 
+## Roadmap
+| Doc | What it is |
+|---|---|
+| [`11-未来工作与展望.md`](11-未来工作与展望.md) | **Future work & roadmap** — the consolidated single source-of-truth: completed experiments (X4–X14, with results), open resubmit experiments, limitations, future prospects, deferred (budget/scope) items, and a 〔待核实〕 interface tracker. Pulls together what was scattered across §7/§8, the plan, and the ADRs. |
+
 ## Method & reproduction
 | Doc | What it is |
 |---|---|
