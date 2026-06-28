@@ -86,15 +86,19 @@ def _spearman(xs: list[float], ys: list[float]) -> float:
 
 
 def _load_candidate_pool(rewards_path: Path, candidates_path: Path) -> dict:
-    """复用 build_preference_pairs._load 的 join：rewards(fid,k,reward) ⋈ candidates_index(fid,k,audio,text)
-    → by_fid[fid] = [{k,reward,audio,text}, ...]（每 prompt 的全部候选 + 奖励），供 E1 选择伪影 null control。"""
-    cand = {(c["fid"], c["k"]): c for c in read_jsonl(candidates_path)}
+    """构造每 prompt 的候选池，供 E1 选择伪影 null control。
+    关键: **audio 必须取 rewards 文件自带的那个**——settings-matched 用 rewards_fixed.jsonl 时它指向
+    cand_fixed_*.wav（正确的 matched 音频）；若错用 candidates_index(grid) 的 audio 会算到错误的 grid 候选
+    上（曾导致 ρ_real=−0.103 ≠ headline −0.216 的自洽性失败）。text 是 per-prompt，从 candidates_index
+    建 fid→text 映射（与候选级 k 对齐无关，稳健）。"""
+    text_by_fid: dict[str, str] = {}
+    for c in read_jsonl(candidates_path):
+        text_by_fid.setdefault(c["fid"], c.get("text", ""))
     by_fid: dict[str, list[dict]] = defaultdict(list)
     for r in read_jsonl(rewards_path):
-        meta = cand.get((r["fid"], r["k"]), {})
         by_fid[r["fid"]].append({"k": r["k"], "reward": float(r["reward"]),
-                                 "audio": meta.get("audio") or r.get("audio"),
-                                 "text": meta.get("text", r.get("text", ""))})
+                                 "audio": r.get("audio"),
+                                 "text": r.get("text") or text_by_fid.get(r["fid"], "")})
     return by_fid
 
 
