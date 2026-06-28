@@ -9,7 +9,7 @@
 
 ## 0. TL;DR（一句话裁决）
 
-在 dots.tts 上，**11 臂同批（base 重测 WER 0.112，落于此前 0.103/0.128 之 CI 内 → 生成 no-seed 随机、单批即消解 Table-1/1b 两-base cosmetic）**；**两条建设性路线脱离崩坏**：`open_soar`（reward-free 自纠正）**改善**（UTMOS 4.380 全表最佳、WER≈base、SIM †↓ 略降）、`reward_weighted`（**非似然** reward 加权，X6b）**逃逸/不崩**（全表最低 WER 0.092，仅 SIM\*/UTMOS† 轻降——「逃逸」非「胜过 base」）；**`sft`、`dpo_multiobj`、`dpo_weronly` 全部退化或崩坏**——其中 `dpo_multiobj` **灾难崩坏 + 25% 生成时崩**（immediate-EOS），`sft` **意外崩坏**（推翻审稿钦点的「安全对照」），`dpo_weronly` 大致守住但未取得最低 WER（**RQ3 reward-hacking 未复现**）。崩坏按「往 automatic-reward 选出的**自生成 off-manifold winner** 拉多狠」**单调加剧**，导出**精修论点**：off-manifold self-training 退化与训练目标（SFT/DPO）无关，**但逃逸存在**——非似然目标（`reward_weighted`）可脱离崩坏，**修法是弃似然-DPO 改用非似然目标、而非过滤配对**（`dpo_onmanifold` X6a 仍崩、WER 0.315 全† 为证）。**RQ4 精修序**：reward-free 自纠正（`open_soar`，改善）＞ 非似然 reward（`reward_weighted`，逃逸）＞ 似然-DPO（`dpo_multiobj`，崩坏）。**RQ3**：`dpo_weronly`（0.110≈base）与 `reward_weighted_weronly`（X7，0.365 劣于 base）均未取得最低 WER → reward-hacking 在 DPO 与 reward-weighted 两框架皆**未复现**（诚实负面）。
+在 dots.tts 上，**11 臂同批（base 重测 WER 0.112，落于此前 0.103/0.128 之 CI 内 → 生成 no-seed 随机、单批即消解 Table-1/1b 两-base cosmetic）**；**两条建设性路线脱离崩坏**：`open_soar`（reward-free 自纠正）**改善**（UTMOS 4.380 全表最佳、WER≈base、SIM †↓ 略降）、`reward_weighted`（**非似然** reward 加权，X6b）**逃逸/不崩**（全表最低 WER 0.092，仅 SIM\*/UTMOS† 轻降——「逃逸」非「胜过 base」）；**`sft`、`dpo_multiobj`、`dpo_weronly` 全部退化或崩坏**——其中 `dpo_multiobj` **灾难崩坏 + 25% 生成时崩**（immediate-EOS；**此为离线全句解码路径特有——§5b 同一模型流式逐拍解码下 WER+UTMOS 双指标均正常**），`sft` **意外崩坏**（推翻审稿钦点的「安全对照」），`dpo_weronly` 大致守住但未取得最低 WER（**RQ3 reward-hacking 未复现**）。崩坏按「往 automatic-reward 选出的**自生成 off-manifold winner** 拉多狠」**单调加剧**，导出**精修论点**：off-manifold self-training 退化与训练目标（SFT/DPO）无关，**但逃逸存在**——非似然目标（`reward_weighted`）可脱离崩坏，**修法是弃似然-DPO 改用非似然目标、而非过滤配对**（`dpo_onmanifold` X6a 仍崩、WER 0.315 全† 为证）。**RQ4 精修序**：reward-free 自纠正（`open_soar`，改善）＞ 非似然 reward（`reward_weighted`，逃逸）＞ 似然-DPO（`dpo_multiobj`，崩坏）。**RQ3**：`dpo_weronly`（0.110≈base）与 `reward_weighted_weronly`（X7，0.365 劣于 base）均未取得最低 WER → reward-hacking 在 DPO 与 reward-weighted 两框架皆**未复现**（诚实负面）。
 
 ---
 
@@ -40,6 +40,7 @@
 - **base → dpo_multiobj**：WER **0.112 → 0.890**、SIM **0.878 → 0.341**、UTMOS **4.278 → 2.719**，外加 **25% 生成时崩**（immediate-EOS）。**灾难崩坏**。
 - **base → reward_weighted（X6b）**：WER **0.112 → 0.092**（**全表最低**、不崩）、SIM 0.854（\*略降）、UTMOS **4.278 → 4.117**（†略降）。**逃逸臂**——非似然 reward 加权脱离崩坏（「逃逸/不崩」非「胜过 base」，见 §5c）。
 - **base → reward_weighted_weronly（X7）/ dpo_onmanifold（X6a）**：X7 WER **0.365**（劣于 base、非最低，RQ3 见 §5）；X6a WER **0.315**（on-manifold 配对过滤 0.89→0.32，但**仍崩坏未救活**，见 §5c）。
+> **解码路径提示（decode-path-aware，须与 Table 1 同看）**：表中 `sft`（WER 0.556）/ `dpo_multiobj`（WER 0.890 + 25% immediate-EOS）的「崩坏」是**离线全句解码**（offline `generate()`、一次性 num_steps=10 + EOS-prob 停止）下的结果；**同一模型在逐拍流式解码下产出正常语音**（§5b：流式 WER 0.212 / 0.134、流式 UTMOS 4.283 / 4.406，均 ≈base 0.087 / 4.326）。故 off-manifold self-training 的下游危害**真实但离线解码路径特有**——是**生成时**（非训练；训练 `fm_w` 全程稳、未发散，X2/X3）、且**离线解码路径特有**的现象。Table 1 的离线数字**照留不动**（离线全句合成是标准评测），但表中「崩坏」一律读作**离线全句解码下的崩坏**；alignment **确改变了模型的离线 EOS/停止行为**、模型并非「坏掉」，其表现**依解码路径而定**。（注：X4 的崩坏臂 `sft_losers` / `sft_random` 等本轮仅离线（`--skip-streaming`），其流式是否同样正常 **〔待核实〕**。）
 ---
 
 ### 1.1 X4 · SFT-target 梯度对照（在 off-manifold 轴上滑动 target，n=100×4 · 同数据/同 SFT/同步数 · 唯一变量 = 模仿对象）
@@ -85,7 +86,7 @@
 > - **交叉表偏「divergence」**：按 |reward-gap| 分层，大-gap 对的 FM 与 reward **更脱钩**（同向率 **34%** vs 小-gap **48%**）→ 偏 divergence。
 > - **合判**：训练指标温和、却在 **LJ002 子集** 生成时崩（25% immediate-EOS）→ **不是 run0 式训练时发散**，而是**「训练温和但模型已 off-manifold 漂移 → 部分 prompt 生成时崩」**。
 
-故**保守报告为「生成时子集崩」**，是否纯属 optimization divergence **待人工 TB-curve 复核 + 失败句听测裁决**（§7 下一步 2），不径直坐实。这一图景**强化 off-manifold 论点**：错向梯度**不靠炸训练指标**（`fm_w` 未再爆、margin 仍小），而是**悄悄把模型推离流形** → 在 LJ002 这类 prompt 上生成时崩。
+故**保守报告为「生成时子集崩」**，是否纯属 optimization divergence **待人工 TB-curve 复核 + 失败句听测裁决**（§7 下一步 2），不径直坐实。这一图景**强化 off-manifold 论点**：错向梯度**不靠炸训练指标**（`fm_w` 未再爆、margin 仍小），而是**悄悄把模型推离流形** → 在 LJ002 这类 prompt 上**离线解码时**崩。**关键限定（decode-path-aware）**：此 25% immediate-EOS 是**离线 `generate()`**（一次性 num_steps=10 + EOS-prob 停止）路径上的崩；**同一 `dpo_multiobj` 在逐拍 1T1A 流式解码下全 n=100 条正常语音**（§5b：流式 WER 0.134 / UTMOS 4.406，均 ≈base 0.087 / 4.326）→ 离线 25% 生成时崩**为离线解码路径特有**。alignment **确改变了模型的离线 EOS/停止行为、但模型并未「坏掉」**——其崩坏表现**随解码路径而变**；离线崩坏数字**照留**（离线全句合成是标准评测），仅须读作**离线全句解码下**的崩坏。
 
 **LJ002 聚集须诚实归因**（见 §2 表 / caveat 3，勿写成「长 prompt 触发」）：评测集 **89% 为 LJ002**（89/100，`eval_big` 取前 100 held-out）、组内 **LJ001 0/11（0%）vs LJ002 25/89（28%）**（小 n、p≈0.02 的真实 prompt 依赖）、失败样本仅**轻微偏长（text 105 vs 94 = 1.12×）**、**无位置偏置（后段 52%）**——聚集**部分因 LJ002 占评测主体**，但组内 0% vs 28% 仍为真实非均匀。须专项排查（caveat 3、§7 下一步）。
 
@@ -157,19 +158,19 @@
 
 > 本轮 **5 主臂**（base / sft / open_soar / dpo_multiobj / dpo_weronly）跑了 streaming；**X4 / X6 / X7 用 `--skip-streaming`，不入 Table 2**（符合预期，RQ2 = 5 主臂）。
 
-**Table 2. Streaming（RQ2）**。流式 WER / SIM、首包延迟 TTFA（ms）、边界不连续度（boundary）。↓ 越低越好。
-| 臂 | 流式 WER ↓ | 流式 SIM ↑ | TTFA (ms) ↓ | 边界不连续度 ↓ | n |
-|---|---|---|---|---|---|
-| **base** | 0.087 | 0.832 | 162.2 | 42.0 | 100 |
-| **sft** | 0.212 | 0.825 | 162.4 | 47.8 | 〔待核实: streaming n〕 |
-| **open_soar** | 0.109 | 0.813 | 162.5 | 96.2 | 100 |
-| **dpo_multiobj** | 0.134 | 0.830 | 162.5 | 85.1 | 〔待核实: streaming n〕 |
-| **dpo_weronly** | 0.179 | 0.824 | 164.3 | 55.8 | 100 |
+**Table 2. Streaming（RQ2）**。流式 WER / **UTMOS** / SIM、首包延迟 TTFA（ms）、边界不连续度（boundary）。↓ 越低越好（UTMOS↑ 越高越好）；流式 UTMOS via `utmos22_strong`（同离线，full n=100、已听验正常语音）。
+| 臂 | 流式 WER ↓ | 流式 UTMOS ↑ | 流式 SIM ↑ | TTFA (ms) ↓ | 边界不连续度 ↓ | n |
+|---|---|---|---|---|---|---|
+| **base** | 0.087 | 4.326 | 0.832 | 162.2 | 42.0 | 100 |
+| **sft** | 0.212 | 4.283 | 0.825 | 162.4 | 47.8 | 〔待核实: streaming n〕 |
+| **open_soar** | 0.109 | 4.450 | 0.813 | 162.5 | 96.2 | 100 |
+| **dpo_multiobj** | 0.134 | 4.406 | 0.830 | 162.5 | 85.1 | 〔待核实: streaming n〕 |
+| **dpo_weronly** | 0.179 | 4.024 | 0.824 | 164.3 | 55.8 | 100 |
 
 **RQ2 裁决**：
 - **TTFA 全臂持平（~162–164ms）→ 对齐不增加首包延迟**（latency gate 通过）。RQ2 的干净正面结论：增益可迁移、**无首包延迟代价**。
 - **健康臂**（base / open_soar / dpo_weronly，全 n=100）流式 WER **大致追随离线排序**。
-- ⚠️ **崩坏臂离线-vs-流式路径差异（非子集伪影）**：`sft` / `dpo_multiobj` 流式产出**全 n=100 条正常语音**（已听验），流式 WER（**0.212 / 0.134**）**远低于**各自离线 WER（**0.556 / 0.890**）——即**离线 collapse 不迁移到流式**。故 offline collapse 是**离线解码路径特有的生成时现象**（immediate-EOS、num_steps=10 一次性采样；呼应训练未发散 X2/X3），流式逐拍解码更稳。**未测流式 UTMOS**，故只主张「流式可懂度退化小得多」、**不主张「流式自然度亦恢复」****。
+- ⚠️ **崩坏臂离线-vs-流式路径差异（非子集伪影）**：`sft` / `dpo_multiobj` 流式产出**全 n=100 条正常语音**（已听验），流式 WER（**0.212 / 0.134**）**远低于**各自离线 WER（**0.556 / 0.890**）——即**离线 collapse 不迁移到流式**。故 offline collapse 是**离线解码路径特有的生成时现象**（immediate-EOS、num_steps=10 一次性采样；呼应训练未发散 X2/X3），流式逐拍解码更稳。**流式 UTMOS 现已测**（`sft` **4.283**、`dpo_multiobj` **4.406**，均 ≈ `base` **4.326**，远高于各自离线 UTMOS 3.788 / 2.719）——即**可懂度与自然度双轴在流式下皆正常**，offline collapse **完全**是离线解码路径伪影。注：这**不**等于「对齐无效」——对齐**确实**改变了模型的**离线** EOS/停止行为，只是该 harm 仅在离线一次性路径上显现、不在逐拍流式路径上；故模型**未坏**。（X4 崩坏臂 `sft_losers` 等为 `--skip-streaming` 离线-only，其流式是否同样正常〔待核实〕。）
 
 ---
 
@@ -192,7 +193,7 @@
 ## 6. 全部 caveat（5 条，务必如实，须写进 PAPER §5/§6/§7）
 
 1. **`sft` 崩坏与「小数据 SFT 过拟合 / 灾难性遗忘」混淆**：188 单说话人 SFT 本就易过拟合 / 遗忘；干净判别需 **SFT-on-random-candidates vs SFT-on-reward-winners** 对照——**该对照已由 X4（§1.1 SFT-target 梯度对照）跑出**：四臂 n=100、同数据/同 SFT/同步数，唯 off-manifold target（winners/losers）崩、on-manifold groundtruth 追平/反超 base、退化随 off-manifold 程度**单调**。`open_soar`（**同规模微调、同优化器族**）不崩本是**部分对照**，X4 进一步把因坐实为「**off-manifold 的目标分布**」而非「SFT 不稳」——**caveat 1 由开放混淆转为受控已决**，§3.1 新论点由强假设升为受控结论。**校准**：组内 winners vs losers 序噪声大（CI 重叠），**不声称 winners 严格劣 losers**；干净表述仍是「{winners,losers} 崩、{random,groundtruth} 不崩、单调」。**另须显式点名跨臂步预算不对称**：`open_soar` 与两个 DPO 臂均 **600 步**、而 `sft` 为 **1500 步**（同规模 / 同优化器族**但步预算不同**），故「`open_soar` 安全 vs `sft` 崩」原则上仍可能被步数差混淆。该步差混淆由**步数匹配的 X4（`sft_groundtruth`@1500、on-manifold、同 SFT 目标、仅变 target 流形位置）**现由**已跑出的 X4**（§1.1，`sft_groundtruth`@1500、on-manifold、同 SFT 目标、仅变 target 流形位置，**追平/反超 base**）关闸消除；佐证：`dpo_multiobj` **仅 600 步即灾难崩**、而唯一 1500 步的 `sft` 崩坏**居中**（§3 序③，介于 ②`dpo_weronly` 与 ④`dpo_multiobj` 之间）→ **步数与崩坏非单调**，反证步数非头条驱动。
-2. **`dpo_multiobj` 的 25% 失败是 immediate-EOS / no-payload 的「生成时子集崩」**，与 graded（Spearman −0.216）**不同质**；崩坏量级超出弱单调相关的预测。但**「graded vs optimization divergence」证据不一**：X2/X3 训练曲线 `fm_w` 全程稳 ~0.74、**未二次爆**、margin 仍小 0.065 → **训练未发散**（非 run0 式训练时爆炸）；交叉表大-gap 对 FM-reward 更脱钩（34% vs 48%）→ **偏 divergence**。**合判 = 训练温和但模型已 off-manifold 漂移 → 部分 prompt 生成时崩**；**保守报告，不径直断言 optimization divergence**，待人工 TB-curve + 失败句听测裁决。这**强化 off-manifold 论点**：错向梯度不靠炸训练指标（`fm_w` 未再爆、margin 仍小）、而是悄悄把模型推离流形。
+2. **`dpo_multiobj` 的 25% 失败是 immediate-EOS / no-payload 的「生成时子集崩」**，与 graded（Spearman −0.216）**不同质**；崩坏量级超出弱单调相关的预测。但**「graded vs optimization divergence」证据不一**：X2/X3 训练曲线 `fm_w` 全程稳 ~0.74、**未二次爆**、margin 仍小 0.065 → **训练未发散**（非 run0 式训练时爆炸）；交叉表大-gap 对 FM-reward 更脱钩（34% vs 48%）→ **偏 divergence**。**合判 = 训练温和但模型已 off-manifold 漂移 → 部分 prompt 生成时崩**；**保守报告，不径直断言 optimization divergence**，待人工 TB-curve + 失败句听测裁决。这**强化 off-manifold 论点**：错向梯度不靠炸训练指标（`fm_w` 未再爆、margin 仍小）、而是悄悄把模型推离流形。**且此 25% 生成时崩为离线解码路径特有**：同一 `dpo_multiobj` 在逐拍流式解码下全 n=100 条正常（§5b：流式 WER 0.134 / UTMOS 4.406，均 ≈base 0.087 / 4.326）→ 崩坏**依解码路径而定、模型未「坏」**（alignment 确改了离线 EOS/停止行为），离线数字**照留**但须读作**离线全句解码下**的崩坏。
 3. **失败聚于 `LJ002` 子集**（`sft`、`dpo_multiobj` 皆然）须**诚实归因**：评测集（`eval_big` 取前 100 held-out）**本身 89% 为 LJ002**（89/100），故聚集**部分因 LJ002 占评测主体**；但组内 **LJ001 0/11（0%）vs LJ002 25/89（28%）**（小 n、p≈0.02）仍是真实 prompt 依赖，失败样本仅**轻微偏长（text 105 vs 94 = 1.12×）、无位置偏置（后段 52%）**——**不写成「长 prompt 触发」**。仍**须专项排查**（prompt 内容 / 评测集排序 / fid 块边界）；这也是 n=3 冒烟（全 `LJ001`）漏掉崩坏的直接原因。
 4. **崩坏臂 CI 极大**（`sft` WER **[0.30, 0.99]**、`dpo_multiobj` WER **[0.63, 1.31]**、UTMOS 2.719〔CI 待核实〕）、**单说话人 LJSpeech**、**无人类听测（ABX/MOS）**——量级**仅供方向**，不可当精确效应。
 5. **`dpo_multiobj` 主表 WER 0.890 只统计成功的 75 条**（失败的更差），故**失败率（25%）必须与 WER 0.890 并列**报告，否则**低估崩坏**。
@@ -206,7 +207,7 @@
 3. **`LJ002` 聚集排查**（caveat 3）：核对失败句的 **prompt 长度 / 内容 / 评测集排序 / fid 块边界**，判定崩坏是否与某结构性因素绑定，而非均匀；据此决定是否需重排评测集 / 扩 n。
 4. ~~**`probe_analysis.py` 偏相关**（intrinsic 裁决）~~ **✓ 已完成（见 §8）**：`corr(FM-margin, reward-gap | guidance, num_steps, speaker_scale)` = **partial −0.392、CI[−0.548,−0.209]、显著**，控住全部生成 knob 仍存活 → **裁决：intrinsic（反相关非 grid effect）**；num_steps r=−0.237 是温和混淆但被偏相关控住。**C6 守住**：intrinsic ≠ intrinsic-to-`L_FM`，诊断仍 preference-likelihood/off-manifold。**X5 settings-matched re-probe 进一步以最强设计（setting_gap≡0、配对无条件控住设置）复核确认 intrinsic、头条改 Spearman ρ=−0.216，见 §8.5。**
 5. **人类听测（ABX/MOS，≥15–20 听者）**：崩坏臂的量级与 UTMOS 退化须由人耳锚定；未做前**不称** perceptual / naturalness 退化（[`07`](07-审稿意见-第一轮.md) P2）。
-6. **补全 TBD**：~~Table 2（streaming）~~ **✓ 已跑（见 §5b · RQ2 五主臂：TTFA 平、健康臂流式 WER 追排序；崩坏臂流式正常(满 n=100、离线-vs-流式路径差异、UTMOS 未测)）**；仍待 **EmergentTTS 列**（LLM-judge 胜率）。
+6. **补全 TBD**：~~Table 2（streaming）~~ **✓ 已跑（见 §5b · RQ2 五主臂：TTFA 平、健康臂流式 WER 追排序；崩坏臂流式正常(满 n=100、离线-vs-流式路径差异、**流式 WER+UTMOS 双指标均正常**：sft 0.212/4.283、dpo_multiobj 0.134/4.406 ≈base 0.087/4.326 → 离线 collapse 纯属离线解码路径伪影)）**；仍待 **EmergentTTS 列**（LLM-judge 胜率）。
 
 ---
 
