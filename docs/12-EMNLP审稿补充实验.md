@@ -22,11 +22,15 @@
 - **审稿点**：Devil's Advocate 最强反驳 + methodology reviewer。settings-matched 下 winner/loser 只差 seed，reward gap 近噪声；best-vs-worst 选的是**极值抽样**，极值天然 atypical（高 `L_FM`）。⇒ 反相关 ρ=−0.216 可能是「在噪声上选极值」的 order-statistic **伪影**，而非 reward↔likelihood **耦合**。当前 `.tex` 只在 §6/Limitations 加了 caveat 承认这一点——**跑出 null control 才能反驳、把 caveat 变成正面证据**。
 - **可行性**：**无需新合成**——用现有 settings-matched 候选池（每 prompt 多 seed 候选 + reward）即可；只需重跑探针**对全部候选**算 `L_FM`（no_grad 前向）。
 - **协议**：
-  1. 扩展 `alignment/probe_fm_reward.py`：加 `--emit-per-candidate`，对每 prompt 的**全部**候选输出 denoised `L_FM`（共享 (x0,t)、K=16），落 `alignment/out/percand_lfm.csv`（列：`fid, cand_id, reward, lfm`）。
-  2. 在 `alignment/probe_analysis.py` 加 `--selection-null`，用该 csv 构造三种配对、各算 Spearman ρ(FM-margin, score-gap)：
-     - **(a) 真 reward best-vs-worst**：复算 ρ_real（应 ≈ −0.216，自洽性检查）。
-     - **(b) 随机分数 null（关键）**：用 B≈1000 个随机打分代替 reward，各自 best-vs-worst 选择并算 ρ → 得 **null 分布**。这控制的正是「在任意分数上选极值」的纯 order-statistic 效应。
-     - **(c) 随机配对**：每 prompt 随机取两候选成对算 ρ（次级对照）。
+  1. **✅ 脚本已就绪**（`probe_fm_reward.py` 加了 `--emit-per-candidate`、`probe_analysis.py` 加了 `--selection-null`、并配 `run_e1.sh`；本机 py_compile / bash -n 已过）——一条命令：
+     ```bash
+     bash run_e1.sh 0 reward/out/rewards_fixed.jsonl   # GPU=0, settings-matched 候选池
+     ```
+     = ① `probe_fm_reward.py --emit-per-candidate`（对每 prompt 的**全部候选**算 K-MC 去噪 `L_FM`，落 `alignment/out/percand_lfm.csv`：`fid,k,reward,lfm,audio`；no_grad、**无需新合成**）；② `probe_analysis.py --selection-null`（读该 csv，CPU 秒级）。
+  2. `--selection-null` 报三件事（裁决「伪影 vs 耦合」）：
+     - **(candidate-level，最干净)**：within-prompt 去均值 corr(reward, `L_FM`) over **全部候选、零极值选择**——ρ>0（高 reward = 高 `L_FM` = 更 off-manifold）且 perm-p<0.05 ⇒ 耦合在候选级即成立、与极值选择**无关**（最强反驳）。
+     - **(Null A，关键)**：用 B=1000 个随机准则替代 reward 做 best-vs-worst → null ρ 分布；ρ_real 落在 null **之外**(p<0.05) ⇒ **reward-specific、非通用极值伪影**。
+     - **(Null B)**：interior pairs（2nd-best vs 2nd-worst）反相关是否存活 ⇒ 非仅极值驱动。
   3. **判据**：
      - ρ_real **落在 (b) null 分布之外**（单侧 perm-p < 0.05）⇒ 反相关是 **reward-specific**、非通用极值伪影 → **直接反驳 DA**，把 §6 caveat 改成「已排除 order-statistic 伪影」。
      - ρ_real **落在 null 内** ⇒ 诚实**收回**「intrinsic coupling」措辞、改述为「extreme-selection 效应」（论文仍成立但更弱）。

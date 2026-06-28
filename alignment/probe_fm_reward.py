@@ -32,6 +32,7 @@ import argparse
 import csv
 import json
 import sys
+from collections import defaultdict
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -84,6 +85,47 @@ def _spearman(xs: list[float], ys: list[float]) -> float:
     return _pearson(rank(xs), rank(ys))
 
 
+def _load_candidate_pool(rewards_path: Path, candidates_path: Path) -> dict:
+    """复用 build_preference_pairs._load 的 join：rewards(fid,k,reward) ⋈ candidates_index(fid,k,audio,text)
+    → by_fid[fid] = [{k,reward,audio,text}, ...]（每 prompt 的全部候选 + 奖励），供 E1 选择伪影 null control。"""
+    cand = {(c["fid"], c["k"]): c for c in read_jsonl(candidates_path)}
+    by_fid: dict[str, list[dict]] = defaultdict(list)
+    for r in read_jsonl(rewards_path):
+        meta = cand.get((r["fid"], r["k"]), {})
+        by_fid[r["fid"]].append({"k": r["k"], "reward": float(r["reward"]),
+                                 "audio": meta.get("audio") or r.get("audio"),
+                                 "text": meta.get("text", r.get("text", ""))})
+    return by_fid
+
+
+def _run_emit_per_candidate(pre: DotsPreprocessor, dev, args) -> None:
+    """E1（选择伪影 null control 的输入端）：对每 prompt 的**全部候选**算 K-MC 去噪 L_FM，
+    落 percand_lfm.csv（fid,k,reward,lfm,audio）。供 probe_analysis.py --selection-null。
+    无需新合成——只对现有候选池做 no_grad 前向（与配对探针同款 fork_rng + 共享 seed 序列）。"""
+    pool = _load_candidate_pool(Path(args.rewards), Path(args.candidates))
+    fids = list(pool.keys())
+    if args.n and args.n > 0:
+        fids = fids[: args.n]
+    rows_out: list[dict] = []
+    for fi, fid in enumerate(fids):
+        for c in pool[fid]:
+            if not c["audio"]:
+                continue
+            batch = _to_device(pre.collate([pre.process(fid, c["text"], c["audio"])]), dev)
+            draws = [_fm_with_seed(pre, batch, args.seed0 + k, dev) for k in range(args.k)]
+            rows_out.append({"fid": fid, "k": c["k"], "reward": c["reward"],
+                             "lfm": sum(draws) / len(draws), "audio": c["audio"]})
+        print(f"  [{fi:3d}] fid={fid}  cands={len(pool[fid])}")
+    out = Path(args.out_percand)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    with out.open("w", newline="", encoding="utf-8") as f:
+        w = csv.DictWriter(f, fieldnames=["fid", "k", "reward", "lfm", "audio"])
+        w.writeheader()
+        w.writerows(rows_out)
+    print(f"\n✓ per-candidate L_FM -> {out}  "
+          f"({len(rows_out)} candidates over {len(fids)} prompts; 供 probe_analysis.py --selection-null)")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description="探针：FM 损失是否为有效隐式奖励")
     ap.add_argument("--ckpt", default="rednote-hilab/dots.tts-base")
@@ -93,12 +135,23 @@ def main() -> None:
     ap.add_argument("--seed0", type=int, default=20260625)
     ap.add_argument("--out-csv", default="alignment/out/probe_per_pair.csv",
                     help="逐对结果落盘（解 reviewer 的『headline 不可独立重算』+ 供 probe_analysis.py）")
+    ap.add_argument("--emit-per-candidate", action="store_true",
+                    help="E1 选择伪影 null control：对每 prompt 的全部候选算 L_FM、落 --out-percand（不跑配对探针）")
+    ap.add_argument("--candidates", default="candidates/out/candidates_index.jsonl",
+                    help="--emit-per-candidate 用：候选索引（fid,k,audio,text）")
+    ap.add_argument("--rewards", default="reward/out/rewards.jsonl",
+                    help="--emit-per-candidate 用：候选奖励（settings-matched 用 reward/out/rewards_fixed.jsonl）")
+    ap.add_argument("--out-percand", default="alignment/out/percand_lfm.csv")
     args = ap.parse_args()
 
     dev = _device()
     print(f"device={dev}  pairs={args.pairs}  N={args.n}  K={args.k}")
     pre = DotsPreprocessor.from_pretrained(args.ckpt)
     pre.model.to(dev)
+
+    if args.emit_per_candidate:
+        _run_emit_per_candidate(pre, dev, args)
+        return
 
     rows = list(read_jsonl(Path(args.pairs)))[: args.n]
     if not rows:
