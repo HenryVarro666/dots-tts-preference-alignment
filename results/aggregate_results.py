@@ -230,6 +230,7 @@ def _aggregate(args) -> None:
             "n_ok": rep.get("n_ok"), "n_failed": rep.get("n_failed"),
             "n_total": rep.get("n_total"),
             "stream_wer": stm.get("wer"), "stream_sim": stm.get("sim"),
+            "stream_utmos": stm.get("utmos"),  # 流式自然度（score_synth 已算、此前未 surface）
             "first_packet_ms_p50": (st.get("first_packet_ms") or {}).get("p50"),
             "boundary_discont": st.get("boundary_discontinuity_p95_flux"),
             "ckpt": ckpt,  # 溯源（ledger 外的臂无 ckpt → 标 '(ledger 外)'）
@@ -306,8 +307,9 @@ def _aggregate(args) -> None:
 
     # Table 2 流式表
     st_tbl = _md_table(
-        ["treatment", "NFE", "流式WER↓", "流式SIM↑", "首包 p50(ms)↓", "边界不连续度↓"],
+        ["treatment", "NFE", "流式WER↓", "流式SIM↑", "流式UTMOS↑", "首包 p50(ms)↓", "边界不连续度↓"],
         [[r["treatment"], r["nfe"], _fmt(r["stream_wer"]), _fmt(r["stream_sim"]),
+          _fmt(r.get("stream_utmos"), None, 3),
           _fmt(r["first_packet_ms_p50"], None, 1), _fmt(r["boundary_discont"], None, 4)]
          for r in master_rows])
     (RESULTS / "streaming_table.md").write_text("# Table 2 流式表\n\n" + st_tbl, encoding="utf-8")
