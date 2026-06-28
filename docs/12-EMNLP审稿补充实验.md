@@ -42,10 +42,17 @@
 - **审稿点**：EIC + methodology + DA。dpo\_multiobj 崩坏可能是 **LJ002 块集中** + **丢弃 25 条 immediate-EOS 失败**的伪影；`n=75`（成功句）与 base 的 `n=100` **不可比**，低估或误判退化。
 - **可行性**：**若逐句 WER/UTMOS 已存（评测产物带 fid）→ 纯分析、零 GPU**；若只存了 aggregate → 对现有音频重跑 ASR/UTMOS（便宜，无需重新合成）。
 - **协议**：
-  1. 取崩坏臂（`sft`, `dpo_multiobj`）与 `base` 的**逐句** WER/UTMOS，按 `fid` 映射到 block（LJ001 / LJ002 / …）。
-  2. (a) **按 block 分组**报告 WER/UTMOS——看崩坏是否跨 block 均匀，还是只在 LJ002。
-     (b) **最坏情况补全**：把 dpo\_multiobj 的 25 条 immediate-EOS 以 **WER=1.0 / UTMOS=最低** 计入，报 **full n=100 worst-case** 数字，与 n=75 **并列**。
-     (c) 报告 base 在同 block 上的表现，做差。
+  1. **✅ 脚本已就绪**（`eval/analyze_collapse_blocks.py` + `run_e2.sh`；本机 py_compile / bash -n 已过；**纯 CPU、无需 GPU/新合成**）——一条命令：
+     ```bash
+     bash run_e2.sh <eval-manifest.jsonl>            # 默认 arms = base_nfe10 sft_nfe10 dpo_multiobj_nfe10
+     ```
+     读 `results/out/{arm}.metrics.jsonl`（`score_synth.py` 落盘的逐句 `{fid,wer,sim,utmos}`）+ manifest（全 100 fid）；**缺失的 fid = immediate-EOS 失败句**（无需单独记录）。
+  2. 报告四件事（写回 §5.1 / Table 1）：
+     - **(a) scored-only**：当前 n=75 口径。
+     - **(b) worst-case n=100**：把 EOS 失败句补 `WER=1.0 / UTMOS=1.0`，得**可与 base n=100 比**的数字。
+     - **(c) apples-to-apples**：`base` 限制到崩坏臂打分的**同一子集**重算（n 一致，直接回应「n=75 vs n=100」）。
+     - **(d) 分块**：按 block（LJ001/LJ002…）报 WER/UTMOS/scored/EOS-fail——看崩坏跨 block 均匀还是仅 LJ002。
+  > 前提：`results/out/{arm}.metrics.jsonl` 存在（评测时 `score_synth.py` 已落盘）。若只剩 aggregate summary.json、metrics.jsonl 丢了 → 对现有 `inference/out/{arm}/*.wav` 重跑 `eval/score_synth.py` 一次（便宜、无需重新合成）即可补出逐句。
   3. **判据**：worst-case n=100 仍崩 **且** 崩坏跨 block 均匀 ⇒ collapse 稳健、非 LJ002+丢句伪影（可保留「regardless of objective」但仍标 cautionary）；若只在 LJ002 ⇒ 改述为「block-specific」、并扩 n / 重排评测集。
   4. **落表**：Table 1 加 **worst-case-n100** 列或脚注；§5.1 加分块说明；按结果决定是否软化「off-manifold self-training harms regardless of objective」。
 - **预计**：有逐句数据则 < 1 小时纯分析。**先跑这个（最便宜、直接补 n=75 的硬伤）。**
