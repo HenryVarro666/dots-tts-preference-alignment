@@ -37,6 +37,7 @@
 | SpeechBrain（Ravanelli et al., 2021） | **2106.04624** | SpeechBrain: A General-Purpose Speech Toolkit | ECAPA 实现来源 |
 | EmergentTTS-Eval（2025） | **2505.23009** | EmergentTTS-Eval: Evaluating TTS Models on Complex Prosodic… Model-as-a-Judge | §7 limitation（X9，judge API 待接） |
 | GSPO（2025） | **2507.18071** | Group Sequence Policy Optimization | §1（Qwen3-TTS 的 DPO/GSPO 适配） |
+| Qwen3-TTS（2026） | **2601.15621** | Qwen3-TTS Technical Report | §1（TTS 上 DPO+GSPO 后训练先例；2026-01） |
 | VITS（Kim et al., 2021） | **2106.06103** | Conditional VAE with Adversarial Learning for End-to-End TTS | §1 背景 |
 | FastSpeech2（Ren et al., 2021） | **2006.04558** | FastSpeech 2: Fast and High-Quality End-to-End Text to Speech | §1 背景 |
 
@@ -58,9 +59,10 @@
 
 | 引用 | 处理 |
 |---|---|
-| **Qwen3-TTS** | Qwen 团队 tech report / blog，**无独立 arXiv**。引 Qwen 官方报告 URL，或仅作系统名提及（其 DPO/GSPO 适配另引 GSPO 2507.18071）。〔待核实官方链接〕 |
+| **REINFORCE**（Williams, 1992） | 经典期刊论文（Machine Learning, 8(3–4):229–256, 1992, Springer），**pre-arXiv**。已作 `@article{williams1992reinforce}` 入 refs.bib（**唯一**非-arXiv 条目）。 |
 | **SOAR**（dots.tts 的自纠后训练） | 正文明确「**未公开 / 无文档**」，故**不单独引**，归入 dots.tts 报告（2606.07080）。本研究的 **open-SOAR 是其开放近似**，为本文贡献、无外部引用。 |
-| **REINFORCE**（Williams, 1992） | 经典期刊论文（Machine Learning, 1992），**pre-arXiv**；按期刊引，非 arXiv id。 |
+
+> 注：**Qwen3-TTS 原以为无 arXiv，复核发现有** → 已移入 B 节（**2601.15621**，✓核验）。故 D 节非-arXiv 仅剩 Williams1992（已入 bib）与 SOAR（不引）。
 
 ## E. 可选组件引用（按是否在正文「命名为方法」决定要不要建 bib 条目）— 已核验 ✓
 
@@ -73,8 +75,8 @@
 
 ## F. Camera-ready 动作清单（X13）
 
-1. **`.bib` 已生成 → `refs.bib`**（仓库根，33 条；title/author 直接从 arXiv meta 抓取、非凭记忆）。直接 `\bibliography{refs}` 引用即可。其中 `voxcpm2025`/`voxcpm22026` 两条**二选一保留**（见 C 节），`chen2024valle2`/`chen2024f5tts` 已拆分。Qwen3-TTS / Williams1992-REINFORCE 仍需**手动**补非-arXiv 条目。
+1. **`.bib` 已生成 → `refs.bib`**（仓库根，**34 条** = 33 arXiv `@misc` + 1 journal `@article`；title/author 直接从 arXiv meta 抓取、非凭记忆）。直接 `\bibliography{refs}` 引用即可。`chen2024valle2`/`chen2024f5tts` 已拆分；VoxCPM 已锁 `voxcpm22026`（原版 0.5B 条目已删，见 C 节）；Qwen3-TTS（`qwen2026qwen3tts`, 2601.15621）与 Williams1992-REINFORCE（`@article`）均已补齐。**无遗留手动条目。**
 2. **拆分 Chen 2024 引用冲突**：正文 `(Chen et al., 2024)` 现同时指 VALL-E 2 与 F5-TTS → 改为 **`Chen et al., 2024a`（VALL-E 2）/ `2024b`（F5-TTS）**，并核对两处 §2.1/§2.2 行内 key。
 3. ~~定 VoxCPM 版本~~ **✅ 已完成**：从 X10 代码锁定 = **VoxCPM2 (2606.06928)**；正文 27 处统一为「VoxCPM2」、删 MiniCPM-4 backbone 臆断、refs.bib 删原版条目。
-4. **Qwen3-TTS 官方链接** 〔待核实〕。
+4. ~~Qwen3-TTS 官方链接~~ **✅ 已解**：Qwen3-TTS 有 arXiv（**2601.15621**, 2026-01），已入 bib（`qwen2026qwen3tts`）。
 5. 全文 `(Author, YEAR)` → `\citep{key}`（投会模板）替换；删除 L7 头部注释里的 `[CIT]/[*-placeholder]` 占位说明。
