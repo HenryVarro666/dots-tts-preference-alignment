@@ -1,109 +1,150 @@
-# dots.tts 连续-latent 偏好对齐 · 机理性警示研究（open-SOAR / DPO 诊断）
+# When Likelihood Disagrees with Quality
 
-> **论文标题**：*When Likelihood Disagrees with Quality: A Cautionary Diagnosis of DPO for Continuous-Latent Flow-Matching TTS (dots.tts)*
+### A cautionary diagnosis of Direct Preference Optimization for continuous-latent flow-matching TTS
+
+**A self-directed research project** that adapts DPO to a modern continuous-latent text-to-speech model (dots.tts), then shows — with a direct, training-free probe — *why the natural adaptation is the wrong tool*, and which alignment routes actually work. The result is a **falsifiable negative/diagnostic finding** backed by a held-out benchmark, a mechanistic probe, and a cross-architecture replication.
+
+> 📄 Full paper: [`PAPER_DRAFT.md`](PAPER_DRAFT.md) · 📊 Results & decisions: [`docs/`](docs/) · 📚 Verified bibliography: [`refs.bib`](refs.bib) · 🇨🇳 中文版: [`README.zh-CN.md`](README.zh-CN.md)
 >
-> 一个**机理性警示研究（cautionary diagnosis）**：在 [dots.tts](../../参考代码/dots.tts/)（2B 全连续潜在 TTS，Apache-2.0）上系统证明——**向 automatic-reward 选出的自生成 off-manifold winner 做 self-training 会退化模型，且与训练目标（SFT 还是 DPO）无关**，只随「往 off-manifold 拉的强度」单调加剧；**唯独 open_soar（训向真实 on-manifold 目标）改善**。机理是 **flow-matching 似然与三个 perceptual reward 轴内在反相关**。
->
-> 立项动机见上层研究议程 [`../../学习资料/05-前沿方向与研究机会.md`](../../学习资料/05-前沿方向与研究机会.md) §6.2 / §3.13 / §3.4。**注意：项目已从最初设想的「开源可用 DPO 配方 + A→B 蒸馏」重定位为下文的警示性诊断——下面的核心发现就是这次重定位的实证依据。**
+> License: **Apache-2.0** (code) · Models studied: dots.tts (2B, Apache-2.0) + VoxCPM2 (2B, OpenBMB)
 
-## 一句话定位（这个项目最终在说什么）
+---
 
-> 在连续-latent flow-matching TTS 上，**用自动奖励驱动的自生成偏好数据做对齐/自训练，会把模型拉向 off-manifold 而退化**——这是一份**可证伪的负面/警示结果**，连带给出反相关的机理诊断。它**不是**一份「拿去就能用的 DPO 配方」，而是「**为什么这条直觉路线会崩、崩在哪、什么才有效**」。
+## TL;DR
 
-## 核心发现（已实测，n=100 离线主表，bootstrap 95% CI）
+Continuous-latent TTS (flow-matching over continuous audio latents — **no discrete audio tokens**) has no native way to do preference alignment, because DPO needs token log-probabilities the model never produces. The *natural* fix, **DPO-FM**, substitutes the flow-matching loss `L_FM` as a likelihood surrogate (following Diffusion-DPO). I tested its one load-bearing assumption — *does an automatic-metric reward prefer the candidate the model finds more likely?* — and found the **opposite**:
 
-**Table 1（offline，100 句 LJSpeech held-out，nfe=10，skip-streaming；WER↓ via Whisper-large-v3 / SIM↑ via ecapa / UTMOS↑ via utmos22_strong）**
+- **An automatic-metric reward preference is monotonically *anti-correlated* with the model's own flow likelihood** (settings-matched Spearman **ρ = −0.216**, N = 188, strengthening on the highest-quality-gap pairs). The reward systematically prefers the **off-manifold** member of each pair.
+- This is **not** a failure of `L_FM` as a likelihood proxy (a likelihood-aligned preference optimizes it to saturation) — it's a failure of the **reward↔likelihood coupling**.
+- On a 100-utterance held-out set, **only the likelihood-aligned, on-manifold route improves**; every arm trained toward reward-selected self-generated targets — DPO-FM *and* plain SFT-on-winners — **collapses**.
+- The collapse is **decode-path-specific**: the same checkpoints **stream perfectly normal speech** under production (1T1A) decoding — so it's a generation-time artifact, not a broken model.
+- The diagnosis **replicates confound-free on a second, independently-built architecture** (VoxCPM2, diffusion-AR; settings-matched ρ = −0.266) → architecture-level evidence across **N = 2** continuous-latent implementations.
 
-| 臂 | WER ↓ | SIM ↑ | UTMOS ↑ | n | 裁决 |
+**One sentence:** *the intuitive "generate candidates → score with automatic metrics → DPO toward the winners" recipe degrades continuous-latent TTS, and here is exactly why, where, and what works instead.*
+
+---
+
+## Why this matters
+
+Preference alignment (RLHF/DPO) is the default post-training tool for LLMs, and the obvious move is to port it to speech. This project shows that the obvious port has a **silent failure mode** that standard metrics hide: training "succeeds" (loss doesn't diverge), yet the model degrades at generation time on a subset of inputs. The contribution is a **mechanism + a diagnostic you can run before spending a GPU-week on alignment** — measure the sign of the likelihood↔reward coupling on held-out pairs first.
+
+For production speech systems the practical takeaways are concrete:
+- **Reward design ≠ reward optimization.** When the reward prefers off-manifold (e.g. over-guided) samples, *no reweighting of WER/speaker/UTMOS terms fixes it* — all three axes anti-correlate with likelihood.
+- **Offline eval can lie about streaming behavior.** A catastrophic offline collapse here did *not* transfer to per-token streaming decoding — the deployment-relevant path was fine. Evaluating only one decode path would have produced the wrong conclusion in both directions.
+- **What works:** reward-free self-correction toward real targets (open-SOAR), or a *non-likelihood* reward-weighted objective anchored to real recordings.
+
+---
+
+## Key results
+
+### 1. Held-out benchmark (offline, n = 100 LJSpeech, bootstrap 95% CI)
+
+WER ↓ (Whisper-large-v3) · SIM ↑ (ECAPA-TDNN) · UTMOS ↑ (naturalness MOS predictor)
+
+| Arm | WER ↓ | SIM ↑ | UTMOS ↑ | n | Verdict |
 |---|---|---|---|---|---|
-| **base** | 0.103 | 0.891 | 4.309 | 100 | 基线 |
-| **open_soar** | **0.093** | 0.844 | **4.408** | 100 | **唯一改善**（UTMOS 五臂最佳、WER≈base、SIM 略降） |
-| **dpo_weronly** | 0.115 | 0.852 | 4.112 | 100 | ≈base（WER-only 未取得最低 WER） |
-| **sft** | 0.545 | 0.673 | 3.917 | 100 | **崩坏**（推翻审稿钦点的「安全对照」） |
-| **dpo_multiobj** | 0.752 | 0.365 | 2.841 | **75** | **灾难崩坏 + 25% 生成失败** |
+| `base` (dots.tts) | 0.112 | 0.878 | 4.278 | 100 | reference |
+| **`open_soar`** | 0.094 | 0.850 | **4.380** | 100 | **only arm that improves** — best UTMOS, WER ≈ base |
+| `dpo_weronly` | 0.110 | 0.856 | 4.055 | 100 | ≈ base (WER-only, mild) |
+| `sft` (on winners) | **0.556** | 0.629 | 3.788 | 100 | **collapse** — overturns the "safe control" |
+| `dpo_multiobj` | **0.890** | 0.341 | 2.719 | **75** | **catastrophic collapse + 25% generation failure** |
 
-> `dpo_multiobj` 的 **n=75**：100 句中 **25/100=25% 生成失败**（全部 immediate-EOS/no-payload、聚集在 `LJ002` 块）；主表 WER 0.752 **只统计成功的 75 条**，**失败率（25%）必须与 WER 并列**，否则低估崩坏。
+> `dpo_multiobj` failed to generate on **25/100** prompts (immediate-EOS); its WER is over the 75 that synthesized — the **failure rate is reported alongside the WER**, never hidden by it.
 
-**两条主结论**：
+### 2. The collapse is monotone in "off-manifold-ness" of the SFT target (controlled gradient, X4)
 
-1. **off-manifold self-training 退化，与训练目标无关。** 把四个对齐臂按「往 automatic-reward 选出的自生成 winner（off-manifold）拉的强度」排序，崩坏**单调加剧**：`open_soar`（训向真实 clean 音频=on-manifold，**改善**）→ `dpo_weronly`（弱拉，≈base）→ `sft`（强拉、纯监督，**崩**）→ `dpo_multiobj`（最强拉 + 反向梯度，**灾难 + 25% 生成失败**）。连「不做 win/lose `L_FM` 对比」的纯 SFT 都崩 → 毒源是**目标分布本身（off-manifold winner）**，而非 DPO 的对比机制。
-2. **FM 似然与 perceptual reward 内在反相关。** 头条 **Spearman ρ=−0.187**；**偏相关 −0.392**（控住 guidance/num_steps/speaker_scale 全部生成 knob 后存活，CI[−0.548,−0.209]）→ **intrinsic 确立**（非 grid 副产品）。换到 reward-对齐方向，三个 perceptual 轴**全负**：(−WER) **−0.41** / SIM **−0.68** / UTMOS **−0.60**（**SIM/UTMOS 比 WER 更强** → 不是「只修 reward 组成」能救，须整体弃 FM-as-reward）。
+Same data size, pipeline, and step budget — only the target changes:
 
-**机理定性（C6 严守）**：失败**不在** `L_FM` 本身——**`L_FM` 是有效似然代理**（`open_soar` 用同一损失训出五臂最佳 UTMOS 为证）；失败在 **preference-likelihood 对齐**——偏好对的 winner 是 off-manifold，把似然往那里拉就与质量背离。这正是已知的 **likelihood-vs-quality / CFG gap** 在 TTS 偏好对齐上的具体体现。
+| SFT target | WER ↓ | UTMOS ↑ | |
+|---|---|---|---|
+| `sft_groundtruth` — **real recording (on-manifold)** | **0.087** | 4.337 | **best, beats base** |
+| `sft_random` — random candidate (mid) | 0.138 | 4.035 | mild |
+| `sft` — reward-*winner* (most off-manifold) | 0.556 | 3.788 | collapse |
+| `sft_losers` — reward-*loser* (off-manifold) | 0.569 | 3.952 | collapse |
 
-**RQ3 reward-hacking（诚实改写）**：经典 reward-hacking（WER-only 臂取最低 WER 却牺牲自然度）**在错配的 DPO-FM 框架内未复现**——`dpo_weronly` WER 0.115≈base、并非最低（最低是 open_soar 0.093），两个 DPO 臂都退化、reward-composition 效应被 FM 崩坏混淆。**改在非错配框架内（reward-weighted 回归，X7）干净复现**。
+→ The poison is the **target distribution (off-manifold), not the DPO contrast** — even plain supervised fine-tuning collapses when pointed off-manifold. This resolves the most-cited reviewer confound (small-data SFT instability): at fixed data size, the *on-manifold* SFT target does **not** collapse.
 
-完整裁决与统计见 [`docs/08-实验结果-Table1.md`](docs/08-实验结果-Table1.md)、机理推导见 [`docs/06-核心发现-FM损失与奖励错配.md`](docs/06-核心发现-FM损失与奖励错配.md)、第一轮审稿见 [`docs/07-审稿意见-第一轮.md`](docs/07-审稿意见-第一轮.md)。
+### 3. The mechanism — a training-free likelihood↔reward probe (the core finding)
 
-## 已知 caveat（写进结论，不藏）
+Over all **N = 188** preference pairs, I measure the **denoised flow-matching margin** (`L_FM(loser) − L_FM(winner)`, which is positive iff the winner is the better fit, as DPO-FM assumes) against the reward gap:
 
-- **`sft` 崩坏与「小数据 SFT 过拟合/灾难性遗忘」尚未干净分离**（188 单说话人）——待 **X4（SFT-target 梯度对照：winners/losers/random/groundtruth）** 隔离；`open_soar` 同规模微调不崩是**部分对照**，故「off-manifold 退化」目前是**强假设**。
-- **`dpo_multiobj` 的 25% 是 immediate-EOS 的「生成时子集崩」**——崩坏量级超出弱单调相关（ρ=−0.187）所能预测，但**「graded 退化 vs optimization divergence」证据不一、暂不定论**（X2/X3 实测：训练 `fm_w` 稳 ~0.74、未二次爆、margin 仍小 0.065 → **训练未发散**；交叉表 34% vs 48% 偏 divergence；**合判 = 生成时子集崩**），保守报告、不径直坐实 divergence。
-- **失败聚于 `LJ002` 块须诚实归因**（X2/X3 已诊断）：评测集本身 **89% 为 LJ002**（89/100），故聚集**部分因 LJ002 占评测主体**；组内 **LJ001 0/11（0%）vs LJ002 25/89（28%）**（小 n、p≈0.02）仍是真实 prompt 依赖、**非均匀**，失败样本仅**轻微偏长（1.12×）、无位置偏置**——**不写成「长 prompt 触发」**。
-- **无人类听测（ABX/MOS）**——崩坏量级与 UTMOS 退化未由人耳锚定，未做前**不称** perceptual/naturalness 退化。
+- **Headline (settings-matched): Spearman ρ = −0.216** (ρ² ≈ 4.7%), 95% CI excludes 0; **strengthens** on high-quality-gap strata (top-50% −0.318, top-25% −0.533).
+- Reported alongside (not as the headline): **Pearson −0.489**, explicitly flagged as a *leverage-amplified* linear coefficient — deleting one high-leverage pair flips its sign, while the rank statistic is stable. (Leading with the robust statistic is a deliberate methodological choice.)
+- **Every reward axis anti-correlates** in the reward-aligned direction: −WER −0.52, SIM −0.77, UTMOS −0.72. SIM/UTMOS are *stronger* than WER → you cannot "fix the reward weights," you must abandon `L_FM`-as-reward.
+- **Conclusion:** `L_FM` is a perfectly valid *likelihood* surrogate, but **not a valid implicit reward** — a boundary of the method itself.
 
-## 第二轮实验程序（脚手架已建，本机仅 py_compile，GPU 上跑，结果待出）
+### 4. Cross-architecture replication (closes the "N = 1" generalization concern, X10)
 
-针对上述 caveat 与「负面结果配上『该怎么做』」，第二轮 X1–X13（P0 再分析 → P4 camera-ready）的**一条龙跑序与意义见 [`docs/09-第二轮实验程序.md`](docs/09-第二轮实验程序.md)**。关键臂已全部进 `ablation/run_matrix.py` 的 `TREATMENTS`（`sft_losers/sft_random/sft_groundtruth`、`dpo_onmanifold`、`reward_weighted{,_weronly}`），所有 JSONL 契约 schema 不变。一句话索引：
+The *same* dots-generated preference pairs, scored by **VoxCPM2's own** training FM loss (an independent group, diffusion-AR vs. dots' flow-matching):
 
-- **P0 再分析（CPU）**：X1 高-gap 子集探针扩展、X2 失败率入表、X2/X3 聚集/发散诊断（`eval/diagnose_eval.py`）。
-- **P1 核心（~1–2 GPU日）**：**X4** SFT-target 梯度（隔离 off-manifold vs 小数据 SFT）、**X5** settings-matched 复探针（`--fixed-setting`）。
-- **P2 建设性 + RQ2/3（~3–5 GPU日）**：**X6a** `dpo_onmanifold`（只用 on-manifold winner 救 DPO）、**X6b/X7** `reward_weighted{,_weronly}`（非错配框架内干净复现 reward-hacking）、**X8** 流式 Table 2、**X9** EmergentTTS。
-- **P3 泛化（~1–2 GPU周）**：**X10** VoxCPM 二模型探针（升架构级）、**X11** VCTK/AISHELL-3 多语种。
-- **P4**：X12 人类 ABX/MOS（暂不可行→备协议 + 记 limitation）、X13 camera-ready。
+| Design | Spearman ρ | |
+|---|---|---|
+| Confounded grid pool (settings vary) | −0.087 (n.s.) | confound *masks* the effect — reported as provenance |
+| **Settings-matched** (setting-gap ≡ 0) | **−0.266** (p_perm = 3×10⁻⁴) | effect **returns and is significant** |
 
-## A→B 蒸馏的现状（降为远期 future work）
+→ The phenomenon is **architecture-level across two independent continuous-latent implementations**, not a dots.tts idiosyncrasy. Scope is held honestly to N = 2 — *not* "all TTS."
 
-最初设想的 **Phase B（少步蒸馏 NFE 1~2 + INT8/INT4 量化塞进 8GB Turing，对接 `../../04` 部署指南）已不是主线、未执行**——它以「Phase A 出一个值得部署的对齐配方」为前提，而 Phase A 的裁决是**警示性负面结果**（除 open_soar 外均退化）。因此 Phase B 降为**远期 future work**（开放问题：「偏好对齐/自校正能否在少步蒸馏+量化后存活」），脚手架仍在 `phaseB/` 仅作占位，不在当前论文范围内。
+### 5. Streaming reality check (X8)
 
-## 目录速览
+Under production 1T1A streaming decoding: **time-to-first-audio is flat (~162 ms across all arms)** — alignment adds no latency. Decisively, the collapsed arms' offline failure **does not transfer**: they stream full n = 100 normal-speech utterances at streaming WER 0.212 / 0.134 and **UTMOS 4.283 / 4.406 ≈ base 4.326** — confirming the collapse is an **offline-decode-path artifact**, not a damaged model.
 
-| 目录 | 作用 |
-|---|---|
-| `env/` | 一键装环境（dots.tts + seed-tts-eval + speechmos + WavLM-SV ckpt） |
-| `data/` | 从公开集（VCTK/AISHELL-3/LJSpeech）构造 prompt 清单；多语种见 `data/run_multilingual.md` |
-| `candidates/` | 用 dots.tts 对每个 prompt 采 K 个候选（X5：`--fixed-setting` settings-matched 复探针） |
-| `reward/` | 多目标打分（WER + SIM + UTMOS）→ z-norm 聚合奖励 |
-| `pairs/` | 构造偏好对（win/lose）；`extract_{winners,losers,random}.py`（X4 SFT-target 对照）、`filter_pairs_by_likelihood.py`（X6a on-manifold 过滤） |
-| `alignment/` | **核心**：DPO-on-flow-matching 损失 + trainer + open-SOAR + `probe_analysis.py`（intrinsic 偏相关裁决）+ `train_reward_weighted.py`（X6b/X7）+ `probe_fm_reward_voxcpm.py`（X10） |
-| `inference/` | 离线 & 1T1A 流式批量合成 |
-| `eval/` | Seed-TTS-eval(WER/SIM) + UTMOS + EmergentTTS + 流式指标 + `diagnose_eval.py`（X2/X3 崩坏归因） |
-| `ablation/` `results/` | 跑实验矩阵（`run_matrix.py`，TREATMENTS 含全部新臂）、汇总出表/图（失败率入主表） |
-| `phaseB/` | **远期 future work** 占位（蒸馏+量化，未执行） |
-| `docs/` | **全程文档化**：00 总览 / 01 方法 / 02 决策 / 03 复现 / 04 风险 / 05 踩坑 / 06 核心发现 / 07 审稿 / 08 Table 1 / **09 第二轮程序** |
+### 6. Honest negative: reward hacking *not* reproduced (X7)
 
-## 怎么读这个项目
+The pre-registered WER-only-vs-multi-objective reward-hacking comparison **did not reproduce hacking** — neither WER-only arm attains the lowest WER. Reported as a negative result rather than buried, because the mis-specified objective never reaches the regime where hacking would appear.
 
-1. 先读 [`docs/00-总览与步骤详解.md`](docs/00-总览与步骤详解.md)——理解「为什么管线长这样」。
-2. **看结论**：核心机理发现 [`docs/06-核心发现-FM损失与奖励错配.md`](docs/06-核心发现-FM损失与奖励错配.md) → 实测裁决 [`docs/08-实验结果-Table1.md`](docs/08-实验结果-Table1.md) → 第一轮审稿 [`docs/07-审稿意见-第一轮.md`](docs/07-审稿意见-第一轮.md)。
-3. 方法细节看 [`docs/01-METHOD.md`](docs/01-METHOD.md)；关键设计抉择看 [`docs/02-DECISIONS.md`](docs/02-DECISIONS.md)。
-4. 真要跑：第一轮按 [`docs/03-REPRODUCE.md`](docs/03-REPRODUCE.md)、第二轮按 [`docs/09-第二轮实验程序.md`](docs/09-第二轮实验程序.md)，边跑边填 [`docs/RUN_JOURNAL_TEMPLATE.md`](docs/RUN_JOURNAL_TEMPLATE.md)。
-5. **遇到报错/warning**：先查 [`docs/05-踩坑与修复记录.md`](docs/05-踩坑与修复记录.md)——已记录所有遇到过的错误、warning、改进（现象/根因/修复/为什么/commit）。
+---
 
-## 🚀 远程服务器快速开始（独立部署）
+## What makes this *research*, not just a run
 
-本仓库可**独立 clone 运行**（不依赖上层 TTS 知识库）。`env/setup_env.sh` 会自动把
-dots.tts 与 seed-tts-eval 克隆到本项目 `.deps/`（代码 only，无 LFS 权重）；`common.py`
-会自动定位它们（也可用 `DOTS_TTS_REPO` / `SEED_TTS_EVAL` 环境变量覆盖）。
+The project was executed end-to-end with the discipline I'd bring to a research role:
 
-```bash
-git clone <this-repo-url> dots-tts-preference-alignment
-cd dots-tts-preference-alignment
-bash env/setup_env.sh          # 克隆依赖 + 建 venv + 装包 + 提示放置 WavLM ckpt
-source .venv/bin/activate
-# 还需: 下载 dots.tts-base 权重(HF) + WavLM-SV ckpt(见 setup 提示) + 可选 clone EmergentTTS-Eval
-# 然后按 docs/03-REPRODUCE.md（第一轮）→ docs/09-第二轮实验程序.md（第二轮）端到端跑（2×H100 / 2×A6000）
+- **Falsifiable framing.** A single load-bearing premise, stated up front, tested directly, and **refuted** — the paper is organized around that refutation rather than a result it was hoping for.
+- **Statistical rigor.** Bootstrap 95% CIs on every delta; **Spearman led over leverage-inflated Pearson**; permutation tests respecting speaker clustering; disattenuation showing the reported coefficient is a *conservative lower bound*; pre-specified gap strata as a reviewer-style robustness check.
+- **Confound elimination by design.** The headline isn't a partial correlation — it's a **settings-matched probe** that pairs winner/loser at identical generation settings, removing the entire sampling grid *by construction*.
+- **Scientific honesty.** A retracted over-claim (an n = 24 pilot that regressed to chance at scale, reported openly); scope capped at "two architectures, not all TTS"; the model is explicitly **not** called "broken" once streaming evidence came in.
+- **Adversarial self-review.** A 12-perspective internal red-team ([`docs/02-DECISIONS.md`](docs/02-DECISIONS.md)) plus a verified, curl-checked bibliography ([`refs.bib`](refs.bib), 34 entries, every arXiv id title-matched).
+- **Full ownership of the stack** — data prep → candidate generation → reward scoring → preference-pair construction → four training objectives → offline + streaming evaluation → statistical analysis → paper.
+
+---
+
+## Pipeline & repository
+
+```
+data → candidates → reward scoring → preference pairs → alignment → evaluation → analysis
 ```
 
-> 文档里形如 `../../学习资料/05` 的链接指向作者的 TTS 知识库（立项背景），独立部署时这些链接不可达，不影响运行。
+| Path | What's there |
+|---|---|
+| [`alignment/`](alignment/) | DPO-FM objective, open-SOAR, reward-weighted training; the `L_FM`↔reward probes (dots.tts + VoxCPM2), permutation/leverage analysis |
+| [`reward/`](reward/) | WER / speaker-SIM / UTMOS scorers (batched, cached) |
+| [`pairs/`](pairs/) | best-worst preference-pair construction, on-manifold filtering, settings-matched pairing |
+| [`candidates/`](candidates/) | candidate generation over the sampling grid |
+| [`inference/`](inference/) | offline + 1T1A streaming synthesis |
+| [`ablation/`](ablation/) · [`results/`](results/) | experiment matrix, aggregation, plots |
+| `run_x{4,5,6,7,8,10,14}.sh` | one-command experiment wrappers (self-check → run → analyze → archive) |
+| [`docs/`](docs/) | findings, decision log (ADRs), result tables, pitfalls ledger, citation/arXiv checklist |
+| [`PAPER_DRAFT.md`](PAPER_DRAFT.md) | the full write-up |
 
-## ⚠️ 重要说明
+### Reproduce
 
-- **本机（macOS / 无 GPU / dots.tts 权重未下载）只能语法检查**：`python3 -m py_compile`、`bash -n`。**绝不声称脚本已端到端跑通。** Table 1 等实测数字为 GPU 机器回填、逐字精确；第二轮（X1–X13）结果**待出**。
-- 真正运行需要 **NVIDIA GPU**（设计目标 **2×H100 80GB** 或 **2×A6000 ≥48GB**）。
-- 仅用**公开数据集**；新文件保持 **Apache-2.0**（与 dots.tts 一致，可商用）。
-- 一切「谁超过谁」的数字都标注证据等级；厂商自评/自建集不与第三方混谈（沿用仓库规范）。社区估算/未官方确认项标 `〔需核实〕`。
+```bash
+bash env/setup_env.sh                 # clone dots.tts/VoxCPM2, install deps, fetch SV checkpoint
+bash run_full_dataprep.sh             # corpus → candidates → reward → preference pairs
+bash run_train_all.sh 0 open_soar dpo_multiobj dpo_weronly sft   # train arms (GPU)
+python alignment/probe_fm_reward.py --pairs pairs/out/pairs_best_worst.jsonl --n 188 --k 16
+python results/aggregate_results.py   # Tables 1–3
+```
 
-## License
+Requires an NVIDIA GPU (training/eval); the probes are forward-only.
 
-Apache-2.0（与 dots.tts 一致）。各公开数据集许可见 [`data/LICENSES.md`](data/LICENSES.md)。
+### Data availability
+
+Code, analysis scripts, and all result **tables/numbers** (in [`docs/`](docs/) and [`PAPER_DRAFT.md`](PAPER_DRAFT.md)) are version-controlled. Large or trivially regenerable artifacts — model checkpoints, generated audio, per-pair CSVs, logs — are **git-ignored by design** and reproduced by the scripts above; the raw run outputs live on the GPU host.
+
+---
+
+## About
+
+Independent research project on preference alignment for continuous-latent speech generation — spanning modern TTS architectures (flow-matching & diffusion-AR), DPO/RLHF theory, and rigorous speech evaluation. Built and analyzed end-to-end by one researcher.
+
+*Prepared as a portfolio piece for an AI Research Scientist application. Questions and discussion welcome via Issues.*
