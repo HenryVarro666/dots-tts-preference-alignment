@@ -61,6 +61,11 @@
   3. **判据**：worst-case n=100 仍崩 **且** 崩坏跨 block 均匀 ⇒ collapse 稳健、非 LJ002+丢句伪影（可保留「regardless of objective」但仍标 cautionary）；若只在 LJ002 ⇒ 改述为「block-specific」、并扩 n / 重排评测集。
   4. **落表**：Table 1 加 **worst-case-n100** 列或脚注；§5.1 加分块说明；按结果决定是否软化「off-manifold self-training harms regardless of objective」。
 - **预计**：有逐句数据则 < 1 小时纯分析。**先跑这个（最便宜、直接补 n=75 的硬伤）。**
+- **✅ 已跑（2026-06-28，干净 PASS、已落 §5.1 + Limitations）**：
+  - **worst-case n=100**：dpo_multiobj WER 0.890→**0.917**（补 EOS 失败后**更崩**，没藏）；UTMOS 2.719→2.289。
+  - **apples-to-apples**：base 在**同 75 句** WER **0.100** vs dpo_multiobj 0.890 → **同输入 ~9× 退化** → 封掉 n=75 vs n=100。
+  - **跨 block**：崩坏在 LJ001(0.84)+LJ002(0.90) 都崩（非单块）；仅 immediate-EOS 失败集中 LJ002（25 条全在）。
+  - **裁决**：collapse 稳健、**非「LJ002+丢句」伪影** → §5.1 加三条 control，Limitations 把该混淆标为「已控制」，只剩 graded-vs-divergence 待定。**干净加分。**
 
 ## E3 · 再合成方差（坐实 open-SOAR 唯一正面结果）🟠 中高
 
