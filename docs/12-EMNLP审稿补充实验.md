@@ -259,4 +259,4 @@ VoxCPM2 自采样 188 对（settings-matched：固定 steps=10/cfg=2.0、仅换 
 - **失败根因**：`run_x15` 原默认 LoRA base（`dpo_lora.yaml`）。LoRA DPO 的 ref 前向走 `self.policy.disable_adapter()`，本机 peft 版本在该上下文调 `get_model_status()` → `No adapter layers found` 抛错。**第一轮 dpo_multiobj 用全参、从未走 LoRA 路 → bug 潜伏至今**。全参路径用独立冻结 `self.ref`、不碰 disable_adapter，验证过能跑。
 - **已修**：`run_x15.sh` 默认 base 改 `configs/dpo_multiobj_fullparam.yaml`；LoRA 路留作 future-fix。全参单格较贵 → 建议「十字」5 格（BETAS 三档@λ=0.1 + LAMBDAS 三档@β=0.1）。
 - **重跑命令**：`bash run_x15.sh 0`（默认即全参），或缩格 `BETAS="0.1 0.5 2.0" LAMBDAS="0.1" bash run_x15.sh 0`。
-
+> **✅ ★5 已落 .tex（2026-06-29）**：generality 从「continuous-latent TTS（两模型）」收窄为「dots.tts + 可泛化的诊断方法（DPO 前测 sign）」；VoxCPM2-on-dots(−0.266) 保留为「第二模型确认 dots winner off-manifold」的 dependent 证据；Limitations 加原生-null 全文（ρ=+0.105 n.s.，dots −0.216 在其 CI 外）。改了 intro§37 / results§143 / §6 cross-arch / conclusion / Limitations 五处；并精简 §6 的 VoxCPM2 描述 + n=24 pilot 段抵消正文增量。over-scope 措辞（'not dots.tts-specific' / 'scope is continuous-latent TTS'）已清零、braces/$ 平衡。**待 Overleaf 重编确认仍 ≤8 页**（正文净增 ~1 行，若 Conclusion 又溢一两行，备选再压 §6.180 或 §6.186）。
