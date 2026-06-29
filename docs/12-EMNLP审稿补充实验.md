@@ -35,7 +35,12 @@
      - ρ_real **落在 (b) null 分布之外**（单侧 perm-p < 0.05）⇒ 反相关是 **reward-specific**、非通用极值伪影 → **直接反驳 DA**，把 §6 caveat 改成「已排除 order-statistic 伪影」。
      - ρ_real **落在 null 内** ⇒ 诚实**收回**「intrinsic coupling」措辞、改述为「extreme-selection 效应」（论文仍成立但更弱）。
   4. **落表**：§6 头条段加一句 + 附录小表（ρ_real vs null 均值/95%）；替换 `.tex` 现有 Limitations 的「native null control left to future work」。
-- **预计**：probe per-candidate 前向 ~小时级；分析 CPU 分钟级。**这是把 Findings 接受率往上抬的单一最高杠杆。**
+- **预计**：probe per-candidate 前向 ~小时级；分析 CPU 分钟级。
+- **✅ 已跑（2026-06-28，结果 mixed、已诚实落 §6）**：`ρ_real=−0.217`（≈ headline −0.216，自洽性通过）。
+  - **Null A ✅ p=0.004**：反相关 reward-specific、**非通用极值伪影** → 正面反驳 DA 头号拒稿点。
+  - **candidate-level ❌**：within-prompt Spearman −0.008（perm-p=0.75，n.s.）→ 候选级无平滑耦合。
+  - **Null B ❌**：interior pairs +0.051（翻号）→ 不在非极值对存活。
+  - **裁决**：反相关真实且 reward-specific，但是 **best-vs-worst 极值对比现象**（= DPO-FM 训练 regime），**非平滑内容耦合**。§6 已据此：加 Null A(p=0.004)、把"intrinsic content-typicality coupling"收窄为"extreme-contrast, reward-specific, 限 best-vs-worst regime"，机理段同步加 scope。**一得（Null A 强反驳）一失（机理收窄）**，净诚实增强。
 
 ## E2 · 分块 + 最坏情况 EOS 计分 🔴 高（最便宜，建议先跑）
 
