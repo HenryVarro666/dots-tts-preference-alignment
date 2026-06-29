@@ -158,3 +158,24 @@
 **E2 →（同时）E1 → E3**，三个跑完即可把 5 条 CRITICAL 中靠实验的三条（选择伪影、collapse 混淆、再合成噪声）从「文字 caveat」升级为「已排查」。E4 让跨架构变独立（更强）。E5 留给 Main。
 
 > **维护提示**：每个 E 跑完，更新本表状态 + 回填 `.tex`（见各「落表位置」）+ 同步 [`README.md`](README.md) / [`docs/README.md`](README.md) 索引。本批实验脚本多为**扩展现有脚本**（`probe_fm_reward.py` 加 `--emit-per-candidate`、`probe_analysis.py` 加 `--selection-null`、复用 `batch_synthesize` / `probe_fm_reward_voxcpm.py`），非全新。
+
+---
+
+## 终检 · 全文对抗式一致性扫描（2026-06-29，实验批次全完后）
+
+十几轮 surgical 改动后跑了一个 5 路并行 workflow（数字一致性 / 校准过度声称 / 跨节自相矛盾 / 极值主线连贯 / LaTeX+8 页），合并出 punch-list，已全部落 `.tex`（25 处编辑，括号/美元号校验平衡）。
+
+**1 个 CRITICAL（五审稿人独立都标）**：§6 还留着禁用语 `valid likelihood surrogate`，与正文 "not a broken loss"、§3 "keep it heuristic" 直接打架 → 改为 "not a broken loss, but not a valid implicit reward either"。
+
+**9 个 MAJOR（几乎全是 abstract/contribution/caption 的旧措辞漂移，正文 §5/§6 早已改对）**：
+- `only open-SOAR improves over base` / `every arm ... collapses` / `It is the only arm that does not collapse` —— 被自己表里 `sft_groundtruth`(0.087)、`reward_weighted`(0.092)、`sft_random`(0.138) **同表证伪** → 全部 scope 到「among the alignment arms」「likelihood/imitation arm」「reward-extreme target」，并点名 `sft_groundtruth` 这个 oracle 对照也 beat base（恰好坐实 two-lever）。
+- abstract 说崩坏臂 `stream normally (WER ≈ base)`，但流式 WER 0.212/0.134 ≫ base 0.087 → 改「UTMOS ≈ base；streaming WER far below offline collapse」。
+- abstract / contribution(4) 的 two-lever 句把 `dpo_onmanifold`(只 mitigate) 误当 target-lever 的逃逸证据，漏点真正逃逸的 `sft_groundtruth` → 重写点名两杆杠（objective=reward_weighted、target=sft_groundtruth），`dpo_onmanifold` 归位为「needs both」的反证。
+- line 142 VoxCPM2 唯一一处没带 dependency caveat（"replicates ... across N=2 implementations"）→ 加「same pairs / statistically dependent / not independent replication」。
+- **`4/24 pairs, win-rate 0.33` 算术自相矛盾**（4/24=0.167）：查 `docs/02` 原始记录证实 `4/24 为正`(逐对均值)与 `win_rate 0.33`(逐次 MC draw)是**两个不同的量、都真实**——审稿建议「改 8/24」会引入假数字；正确修法是**消歧措辞**（"better mean margin on 4/24 pairs and better fit in 33% of individual draws"）。
+
+**MINOR**：abstract ρ²≈5%→4.7%（与正文一致）；ρ=−0.217 加注「per-candidate 池重算、与头条 −0.216 一致」；"intrinsic effect"→"settings-matched (reward-specific) effect"；line 134 "monotone in off-manifold"→"tracks reward-extremity"；删 §3 重复的括号；§3 VoxCPM2 加 same-pairs caveat；§6 机理段从 "content typicality" 改为 lead "reward-extremity"；Table 1 去掉误导性 WER 0.094 加粗（非全表最低、且不主张 WER 增益）；intro "off-manifold member of each pair"→"on the largest reward-gap pairs"；`$\mathtt{}$`→`\texttt{}` 统一；`\S6`→`Section~6`。
+
+**裁决（workflow synthesizer）**：硬数字（三张表、dose-response、E2/E3、null-control、VoxCPM2 dependent-evidence scoping）与 canonical **全部自洽**；阻塞项是「正文已改对、headline/caption 没跟上」的机械漂移，无需新实验。修完 + 一次真实 EMNLP 编译确认 ≤8 页 → Findings 有竞争力。
+- ⚠️ **长度**：workflow 估「AT RISK」（abstract ~330 词、§6 偏长、若干 caveat 重复 6–7 次）；本机无法编译，已删最明显冗余（§3 重复括号），其余待 Overleaf 真实编译核页数，若超则按 synthesizer 点名的冗余处（conclusion 的 per-component 三元组、decode-path 重述）收。
+
