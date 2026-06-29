@@ -15,10 +15,11 @@ PERCAND="alignment/out/percand_lfm_grid.csv"
 GT="alignment/out/groundtruth_lfm.csv"
 echo "[dose] REWARDS(grid)=${REWARDS}  -> ${OUT}"
 # 1) per-candidate L_FM on the GRID pool（= X4 target 的池；no_grad、无新合成）
+if [ -f "${PERCAND}" ] && [ "$(wc -l < "${PERCAND}")" -lt 200 ]; then echo "[dose] 删除残缺的 24-prompt percand，重算全量"; rm -f "${PERCAND}"; fi
 if [ ! -f "${PERCAND}" ]; then
-  echo "[dose] 1/3 per-candidate L_FM（grid 池）"
+  echo "[dose] 1/3 per-candidate L_FM（grid 池，全量 --n 0）"
   python alignment/probe_fm_reward.py --emit-per-candidate --rewards "${REWARDS}" \
-    --candidates candidates/out/candidates_index.jsonl --out-percand "${PERCAND}" --k 16 \
+    --candidates candidates/out/candidates_index.jsonl --out-percand "${PERCAND}" --n 0 --k 16 \
     2>&1 | tee "${OUT}/emit_grid.log"
 fi
 # 2) groundtruth(真录音) L_FM（若已存则跳过）
