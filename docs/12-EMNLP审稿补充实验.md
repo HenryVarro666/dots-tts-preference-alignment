@@ -193,3 +193,13 @@ Overleaf 编译实测 12 页（含 refs）：**正文 §6 尾 + 整个 Conclusio
 
 整篇 braces/$ 平衡、零禁用语、4 个 `\ref` 均有 `\label`。**本机装不了 LaTeX，页数须 Overleaf 真实编译核**；若仍超 ~0.1 页，备选再砍：intro 的 VoxCPM2 去重、§6.182 null-control 收紧、§2 收一句。
 
+### 收页 round 2（2026-06-29）：Table 1 全宽→单栏 + 微调
+
+第一轮去冗余后 Overleaf 实测 **11 页**，正文 Conclusion 结束在 **p9 左栏顶部**（仅超 ~0.16 页 / ~16 行）。
+
+**根因（"注意表格格式"）**：**Table 1 原是 `table*`（跨双栏全宽）**，但只有 5 个窄列，内容挤中间、左右大片留白——全宽 float band 白吃一整条页宽，且把相邻栏也占成空白。
+
+**改法**：Table 1 `table*`→单栏 `table`，`{\footnotesize\setlength{\tabcolsep}{4pt} ... }`（字号紧排限定在 tabular 内，**caption 保持正常字号**）。单栏后相邻栏让给正文 → 回收 ~0.18 页（> 0.16 溢出）。另补 intro 的 VoxCPM2 依赖句去重（与 §6.184 / Limitations 重复）做安全垫。整篇 braces/$ 平衡、3 个 `\begin{table}` 均单栏、零 `table*`。
+
+→ 待 Overleaf 再编译确认 Conclusion 落回 p8。若仍差一线，备选：§6.182 null-control 收紧、§2 收一句、Table 2/3 也可同法紧排。
+
