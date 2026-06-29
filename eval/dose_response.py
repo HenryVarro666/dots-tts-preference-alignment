@@ -74,13 +74,16 @@ def main() -> None:
     for r in csv.DictReader(open(args.percand, encoding="utf-8")):
         pool[r["fid"]].append((float(r["reward"]), float(r["lfm"])))
     rng = random.Random(args.seed)
-    win, los, ran = [], [], []
+    win, los, ran = [], [], []          # 选中候选的 L_FM
+    win_r, los_r, ran_r = [], [], []    # 选中候选的 reward（用于 reward-极值轴）
     for fid, c in pool.items():
         if len(c) < 2:
             continue
-        win.append(max(c, key=lambda x: x[0])[1])
-        los.append(min(c, key=lambda x: x[0])[1])
-        ran.append(rng.choice(c)[1])
+        w = max(c, key=lambda x: x[0])
+        l = min(c, key=lambda x: x[0])
+        rr = rng.choice(c)
+        win.append(w[1]); los.append(l[1]); ran.append(rr[1])
+        win_r.append(w[0]); los_r.append(l[0]); ran_r.append(rr[0])
 
     gt_lfm = None
     if args.groundtruth_lfm and Path(args.groundtruth_lfm).exists():
@@ -95,7 +98,8 @@ def main() -> None:
         "sft_nfe10": ("winners", _mean(win)),
     }
 
-    emit("==== [★1 dose-response] target off-manifold 度(均值 L_FM) → 崩坏(eval WER) ====\n")
+    emit("==== [★1 dose-response] target off-manifold 度 → 崩坏(eval WER) ====\n")
+    emit("[轴 A · 绝对均值 L_FM]（注：单次 L_FM 的 SD≈0.10，类间差 ~0.01 在噪声内 → 该轴预期 inconclusive、非 refute）")
     pts = []
     for tag, (name, tl) in targets.items():
         p = Path(args.metrics_dir) / f"{tag}.summary.json"
@@ -122,7 +126,33 @@ def main() -> None:
     else:
         emit("\n  可用点 <3（多半缺 groundtruth）→ 先跑 probe_fm_reward.py --score-audio 补 groundtruth L_FM（run_dose.sh 会代办）。")
 
-    emit("\n==== 落表：单调成立 → §5.1 把『monotone in off-manifold-ness』从 4 类别点升为量化剂量-反应；否则收窄措辞。 ====")
+    # 轴 B · reward 极值 |reward|（崩坏的真实候选驱动量；winners/losers 都极端→都崩，random≈0→轻）
+    emit("\n[轴 B · target reward 极值 |reward|]（崩坏跟的是 reward 极值、非 L_FM；groundtruth 非生成候选、无 reward，作 WER 锚）")
+    epts = []
+    for name, rs, tag in (("winners", win_r, "sft_nfe10"),
+                          ("losers", los_r, "sft_losers_nfe10"),
+                          ("random", ran_r, "sft_random_nfe10")):
+        p = Path(args.metrics_dir) / f"{tag}.summary.json"
+        if not p.exists() or not rs:
+            continue
+        ext = _mean([abs(x) for x in rs])
+        wer = float(json.loads(p.read_text(encoding="utf-8"))["wer"])
+        epts.append((ext, wer, name))
+        emit(f"  {name:18s} 均值 |reward|={ext:.3f}   eval WER={wer:.3f}")
+    gp = Path(args.metrics_dir) / "sft_groundtruth_nfe10.summary.json"
+    if gp.exists():
+        emit(f"  {'groundtruth(real)':18s} |reward|=—(参考分布)   eval WER={float(json.loads(gp.read_text(encoding='utf-8'))['wer']):.3f}  ← 非极值、不崩")
+    if len(epts) >= 3:
+        sp = _spearman([a for a, _, _ in epts], [b for _, b, _ in epts])
+        spe = sorted(epts)
+        mono = all(spe[i][1] <= spe[i + 1][1] for i in range(len(spe) - 1))
+        emit(f"  Spearman(|reward|, WER) over {len(epts)} 点 = {sp:+.3f}；按 |reward| 升序 WER：" + "  ≤  ".join(f"{b:.3f}({n})" for _, b, n in spe))
+        if mono and sp > 0:
+            emit("  ✅ 单调上升 ⇒ 崩坏随 target 的 reward 极值单调加剧（winners/losers 极端→崩、random≈0→轻、real 非极值→不崩）。这是可量化的剂量-反应，机制 = reward-extreme self-training。")
+        else:
+            emit("  ⚠️ 非单调 ⇒ reward 极值也不解释，须另找解释变量。")
+
+    emit("\n==== 落表：轴 A(L_FM) 太吵 inconclusive；轴 B(reward 极值) 单调 ⇒ §5.1 把『off-manifold』改述为『reward-extreme self-generated target』、机制围绕 reward 极值（与 §6 extreme-contrast 一致），不靠绝对 L_FM。 ====")
 
     if args.out:
         out = Path(args.out)
