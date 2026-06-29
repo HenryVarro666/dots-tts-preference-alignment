@@ -130,6 +130,29 @@ def _run_emit_per_candidate(pre: DotsPreprocessor, dev, args) -> None:
           f"({len(rows_out)} candidates over {len(fids)} prompts; 供 probe_analysis.py --selection-null)")
 
 
+def _run_score_audio(pre: DotsPreprocessor, dev, args) -> None:
+    """dose-response 辅助：对一个 {fid,text,(prompt_)audio} jsonl 的每条音频算 K-MC 去噪 L_FM，落 {fid,lfm,audio}。
+    用于 ★1 dose-response 的 groundtruth(真录音) 点——score `data/prompts/dots_manifest_train.jsonl` 的 prompt_audio
+    （sft_groundtruth 臂训练用的真实录音）。no_grad、无训练。"""
+    rows = list(read_jsonl(Path(args.score_audio)))
+    out_rows: list[dict] = []
+    for i, r in enumerate(rows):
+        audio = r.get("audio") or r.get("prompt_audio") or r.get("win_audio")
+        if not audio:
+            continue
+        batch = _to_device(pre.collate([pre.process(str(r["fid"]), r.get("text", ""), audio)]), dev)
+        draws = [_fm_with_seed(pre, batch, args.seed0 + k, dev) for k in range(args.k)]
+        out_rows.append({"fid": str(r["fid"]), "lfm": sum(draws) / len(draws), "audio": audio})
+        print(f"  [{i:3d}] fid={r['fid']}")
+    out = Path(args.out_lfm)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    with out.open("w", newline="", encoding="utf-8") as f:
+        w = csv.DictWriter(f, fieldnames=["fid", "lfm", "audio"])
+        w.writeheader()
+        w.writerows(out_rows)
+    print(f"\n✓ per-audio L_FM -> {out}  ({len(out_rows)} audios; 供 dose_response.py 的 groundtruth 点)")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description="探针：FM 损失是否为有效隐式奖励")
     ap.add_argument("--ckpt", default="rednote-hilab/dots.tts-base")
@@ -146,6 +169,9 @@ def main() -> None:
     ap.add_argument("--rewards", default="reward/out/rewards.jsonl",
                     help="--emit-per-candidate 用：候选奖励（settings-matched 用 reward/out/rewards_fixed.jsonl）")
     ap.add_argument("--out-percand", default="alignment/out/percand_lfm.csv")
+    ap.add_argument("--score-audio", default=None,
+                    help="dose-response：对一个 {fid,text,(prompt_)audio} jsonl 每条算 L_FM、落 --out-lfm（groundtruth 点）")
+    ap.add_argument("--out-lfm", default="alignment/out/groundtruth_lfm.csv")
     args = ap.parse_args()
 
     dev = _device()
@@ -153,6 +179,9 @@ def main() -> None:
     pre = DotsPreprocessor.from_pretrained(args.ckpt)
     pre.model.to(dev)
 
+    if args.score_audio:
+        _run_score_audio(pre, dev, args)
+        return
     if args.emit_per_candidate:
         _run_emit_per_candidate(pre, dev, args)
         return
