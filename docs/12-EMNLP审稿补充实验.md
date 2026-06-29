@@ -234,5 +234,5 @@ Table 1 单栏 + intro 去重后再编译：**§6 整段回到 p8，Conclusion �
 2. **生成器加载器偏离已核验的 `voxcpm_preprocess`**（用了裸 `from voxcpm import VoxCPM` + 无 kwargs → 会去加载 denoiser 触发 modelscope、triton 依赖）。**已镜像为 `from voxcpm.core import VoxCPM` + `from_pretrained(hf_model_id=..., load_denoiser=False, optimize=False, device=...)`**。
 - **seam-2（reward 中间产物）**：verify 确认 `score_{wer,sim,utmos}.py` 写固定名 `reward/out/{wer,sim,utmos}.jsonl`（无 --out），voxcpm 这遍会覆盖 dots 中间产物 → run_x16 step 2 **已自动备份/还原**，最终 `rewards_voxcpm.jsonl` 由 aggregate `--out` 隔离。
 
-> **GPU 机器上仍需核对的唯一 seam（本机无法验）**：VoxCPM2 的 **generate 调用签名**（`generate_candidates_voxcpm._voxcpm_synthesize` 内）——方法名/参数名/返回（音频 vs 路径、采样率、步数/CFG 关键字）须对照已装 `voxcpm` 包确认；一行 `python -c "from voxcpm.core import VoxCPM; import inspect; print(inspect.signature(VoxCPM.generate))"` 即可核。
+> **✅ seam 已核验（2026-06-29, GPU 机器 /data/VoxCPM）**：`generate(text, prompt_wav_path, prompt_text, inference_timesteps, cfg_value)` → 1D float32 ndarray；输出采样率 = `model.tts_model.sample_rate`（README/CLI 官方口径）；加载 `voxcpm.core.VoxCPM` + `load_denoiser=False/optimize=False`。`generate_candidates_voxcpm._voxcpm_synthesize` 已据此定死。**唯一运行前提**：`export VOXCPM_REPO=/data/VoxCPM`（对 run_x16 子进程可见）；VoxCPM 不走 pip、靠 `ensure_voxcpm_importable()` 挂 sys.path。环境须用项目 .venv（base anaconda 有 torch↔torchaudio ABI 不匹配）。
 

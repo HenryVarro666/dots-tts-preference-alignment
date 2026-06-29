@@ -28,10 +28,10 @@ generate_candidates_voxcpm.py — ★5：用 VoxCPM2 **自采样** K 个候选�
 预期结果: candidates/out/candidates_index_voxcpm.jsonl + candidates/out/voxcpm/{fid}_k{k}.wav。
 注意:
     ⚠️ 本机(macOS/无 GPU/未下 VoxCPM2 权重)只 py_compile，不能真跑。
-    ⚠️【唯一需在 GPU 机器核对的 seam】`_voxcpm_synthesize()` 里的 VoxCPM2 TTS-generate 调用按公开
-       `voxcpm` 包的已知约定写（VoxCPM.from_pretrained(...).generate(text, prompt_wav_path, prompt_text, ...)）；
-       VoxCPM2 的确切签名/返回（音频 ndarray vs 路径、采样率、cfg/步数参数名）须对照已装包确认后微调——
-       这是本脚本唯一无法从本机代码核验的外部调用（遵循仓库「不可验证处显式标注」纪律，见 docs/05）。
+    ✅ generate API 与采样率已对照 GPU 机器上的已装 voxcpm 包核验（2026-06-29, /data/VoxCPM，见
+       `_voxcpm_synthesize` docstring）：参数名/返回(1D ndarray)/sr(model.tts_model.sample_rate) 均确认；
+       加载用 voxcpm.core.VoxCPM + load_denoiser=False/optimize=False（镜像已核验的 voxcpm_preprocess）。
+       VOXCPM_REPO 需对子进程可见（run_x16 / 当前 shell `export VOXCPM_REPO=/data/VoxCPM`）。
 """
 
 from __future__ import annotations
@@ -51,27 +51,24 @@ _SEED_BASE = 20260629
 
 def _voxcpm_synthesize(model, text: str, prompt_audio: str, prompt_text: str,
                        steps: int, cfg: float):
+    """调用 VoxCPM2 做一次 zero-shot 克隆合成，返回 (audio_ndarray, sample_rate)。
+
+    ✅ 已对照 GPU 机器上的已装 voxcpm 包核验（2026-06-29, /data/VoxCPM）：
+      - generate(...) 转发到 _generate(...)，参数名确为 text / prompt_wav_path / prompt_text /
+        inference_timesteps / cfg_value（其余有默认值，不传即用包内默认）；
+      - 非流式返回 **1D float32 np.ndarray**（不是 tuple，也不是路径）；
+      - 输出采样率取 `model.tts_model.sample_rate`（VoxCPM README/CLI 写盘的官方口径，跨 v1/v2 通用）。
+      - prompt_wav_path + prompt_text = zero-shot 克隆，与 dots 的 prompt_audio + prompt_text 一一对应。
     """
-    ⚠️ SEAM（GPU 机器上核对）：调用 VoxCPM2 做一次 zero-shot 克隆合成，返回 (audio_ndarray, sample_rate)。
-    下面按公开 `voxcpm` 包的约定写；VoxCPM2 实际签名可能不同，须对照已装包微调：
-      - 方法名可能是 generate / inference / tts；
-      - 返回可能是 ndarray、(ndarray, sr)、或写好的 wav 路径；
-      - 步数/CFG 的关键字名可能是 inference_timesteps / cfg_value 等。
-    本函数是本实验唯一无法从本机代码静态核验的外部调用。
-    """
-    wav = model.generate(
+    audio = model.generate(
         text=text,
         prompt_wav_path=prompt_audio,
         prompt_text=prompt_text,
         inference_timesteps=steps,
         cfg_value=cfg,
     )
-    # 兼容 (audio, sr) / audio 两种返回；采样率缺省按 VoxCPM2 输出 16k（写盘按实际返回为准）。
-    if isinstance(wav, tuple):
-        audio, sr = wav
-    else:
-        audio, sr = wav, 16000
-    return audio, int(sr)
+    sr = int(model.tts_model.sample_rate)
+    return audio, sr
 
 
 def main() -> None:
