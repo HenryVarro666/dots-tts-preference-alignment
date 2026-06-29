@@ -208,3 +208,31 @@ Overleaf 编译实测 12 页（含 refs）：**正文 §6 尾 + 整个 Conclusio
 Table 1 单栏 + intro 去重后再编译：**§6 整段回到 p8，Conclusion 也几乎全在 p8，只剩最后 2 行溢到 p9 顶**（~0.02 页）。最后一刀：Conclusion 内砍掉复述正文/§6 的 3 处（VoxCPM2 数字、honest-negative 括注 dpo_weronly/reward_weighted_weronly、结尾重复 headline 句、opening 微调）≈ 3 行 > 2 行溢出，留 ~1 行余量。零数字/论证改动，纯删正文里已有的重复。braces/$ 平衡。→ 再编一次应正文 ≤8 页（Conclusion 落 p8、Limitations 起 p9）。
 
 > **✅ 已核验（2026-06-29）**：Overleaf 编译确认正文 §1–Conclusion 完整落在 **8 页内**（Conclusion 结束在 p8 右栏底，Limitations 起于 p9 顶）。EMNLP 8 页硬限制达标，收页收口。
+
+---
+
+## ★4 · DPO-FM β×λ_sft 超参网格（Main-tier 加分；脚手架已建，结果待出）
+
+- **审稿点（Main track）**：论文「向 off-manifold winner 做 DPO-FM 必崩」是在单组 (β=0.1, λ_sft=0.1) 上观察的。换 DPO 强度 β、换 anchor-SFT 权重 λ_sft，崩坏是否依旧？**加大 λ_sft 能否救**？把单点崩坏升为「(β,λ) 网格稳健」的更强主张。
+- **脚手架**：`eval/beta_lambda_sweep.py`（emit-configs 派生网格配置 / aggregate 拼 β×λ 网格）+ `run_x15.sh`（一条命令：派生→逐格 train+synth+score→聚合→归档）。配置驱动（β=dpo.beta、λ=dpo.lambda_sft 在 YAML 里），故先派生 `configs/_sweep/<tag>.yaml`。**默认 LoRA base 省卡**。
+- **判据**：整张网格 WER 远高于 base(0.112) ⇒ 崩坏对超参稳健（§5.1 升级主张）；某格（多半大 λ_sft）WER 回落 ⇒ 诚实报「强 anchor 可缓冲」，机理不变、措辞软化。
+- **命令**：`bash run_x15.sh 0`（或 `BETAS="0.1 0.5" LAMBDAS="0.0 1.0" bash run_x15.sh 0 configs/dpo_lora.yaml`）。前置：pairs/winners 已就绪（第一轮已生成）。成本：默认 9 格 LoRA ~1 天。
+
+## ★5 · VoxCPM2 原生配对（把跨架构复现升级为真正独立的 N=2；脚手架已建）
+
+- **审稿点（§6 复现强度封顶）**：当前 VoxCPM2 复现拿 **dots 生成的同一批 pair** 打分 → predictor(reward gap) 共享、统计依赖，只算「第二个似然模型在同样 pair 上同意」。让 **VoxCPM2 自采样候选 → 同套 reward → 原生偏好对 → 原生对上重跑探针**，则 generator/pair/reward-gap 全独立 ⇒ 独立 N=2。
+- **脚手架**：`candidates/generate_candidates_voxcpm.py`（VoxCPM2 自采样，写同款 CandidateRow schema）+ `run_x16.sh`（生成→打分→建对→原生探针→分析→归档）。下游 reward/pairs/probe 按 common.py 的 fid+Row schema 零改动复用。
+- **判据**：原生对上 Spearman 反相关**同号显著** ⇒ 独立复现（§6/Limitations 把「supporting, statistically-dependent」升为「independent」）；近零/正 ⇒ 维持 dependent 证据、诚实不升级。
+- **命令**：`bash run_x16.sh 0 <与 dots 188 对同一 prompt 集>.jsonl 6`。前置：env/setup_env.sh 已挂 VoxCPM2 + 下权重。
+
+### verify 闭环（2026-06-29，2 路对抗式核对真实 CLI/schema/路径）
+
+★4 干净（integration_ok），1 个 MINOR 已修：完全崩坏的格零 wav→score_synth 不产 summary→原会静默掉成 `—`（抹掉最强崩坏信号）；改为从 `inference/out/<tag>/_synthesis_report.json` 取失败率、显式标 `FAIL`/fail=1.0 并计入裁决。
+
+★5 抓到 **2 个真 MAJOR（不在我标注的外部 seam 内），均已修**：
+1. **`pairs/build_preference_pairs.py` 硬编码 dots 候选索引**（`PATHS.candidates_dir/candidates_index.jsonl`，无 `--candidates`）→ VoxCPM 原生对会 join 到 dots 的 text/prompt（缺失则 text="" 静默污染探针）。**已加 `--candidates` 参数 + 缺失即 fail-fast**，run_x16 step 3 传 `${CAND}`。
+2. **生成器加载器偏离已核验的 `voxcpm_preprocess`**（用了裸 `from voxcpm import VoxCPM` + 无 kwargs → 会去加载 denoiser 触发 modelscope、triton 依赖）。**已镜像为 `from voxcpm.core import VoxCPM` + `from_pretrained(hf_model_id=..., load_denoiser=False, optimize=False, device=...)`**。
+- **seam-2（reward 中间产物）**：verify 确认 `score_{wer,sim,utmos}.py` 写固定名 `reward/out/{wer,sim,utmos}.jsonl`（无 --out），voxcpm 这遍会覆盖 dots 中间产物 → run_x16 step 2 **已自动备份/还原**，最终 `rewards_voxcpm.jsonl` 由 aggregate `--out` 隔离。
+
+> **GPU 机器上仍需核对的唯一 seam（本机无法验）**：VoxCPM2 的 **generate 调用签名**（`generate_candidates_voxcpm._voxcpm_synthesize` 内）——方法名/参数名/返回（音频 vs 路径、采样率、步数/CFG 关键字）须对照已装 `voxcpm` 包确认；一行 `python -c "from voxcpm.core import VoxCPM; import inspect; print(inspect.signature(VoxCPM.generate))"` 即可核。
+

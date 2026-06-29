@@ -27,8 +27,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from common import PATHS, PairRow, read_jsonl, write_jsonl  # noqa: E402
 
 
-def _load(rewards_path: Path):
-    cand = {(c["fid"], c["k"]): c for c in read_jsonl(PATHS.candidates_dir / "candidates_index.jsonl")}
+def _load(rewards_path: Path, index_path: Path):
+    if not index_path.exists():
+        raise SystemExit(f"候选索引不存在: {index_path}（构造偏好对需 join text/prompt 元数据；"
+                         f"VoxCPM 原生池请传 --candidates candidates_index_voxcpm.jsonl）")
+    cand = {(c["fid"], c["k"]): c for c in read_jsonl(index_path)}
     by_fid: dict[str, list[dict]] = defaultdict(list)
     for r in read_jsonl(rewards_path):
         key = (r["fid"], r["k"])
@@ -53,12 +56,14 @@ def _mk(a: dict, b: dict, strategy: str) -> PairRow:
 def main() -> None:
     ap = argparse.ArgumentParser(description="构造偏好对")
     ap.add_argument("--rewards", default=str(PATHS.rewards_dir / "rewards.jsonl"))
+    ap.add_argument("--candidates", default=str(PATHS.candidates_dir / "candidates_index.jsonl"),
+                    help="候选索引（join text/prompt 元数据）；VoxCPM 原生池传 candidates_index_voxcpm.jsonl")
     ap.add_argument("--strategy", choices=["best_worst", "top2_bottom2", "threshold"], default="best_worst")
     ap.add_argument("--tau", type=float, default=0.5, help="threshold 策略的最小奖励差")
     ap.add_argument("--out", default=None, help="输出路径（默认 pairs/out/pairs_{strategy}.jsonl）；reward-hacking 臂用它指定独立文件")
     args = ap.parse_args()
 
-    by_fid = _load(Path(args.rewards))
+    by_fid = _load(Path(args.rewards), Path(args.candidates))
     pairs: list[PairRow] = []
     for fid, items in by_fid.items():
         if len(items) < 2:
