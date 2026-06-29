@@ -98,6 +98,10 @@
   ```
 - **判据**：按 target `L_FM` 升序，崩坏 WER 单调上升 + Spearman>0 ⇒ 剂量-反应成立 → §5.1 把"monotone in off-manifold-ness"从 4 类别点升为量化曲线（claim 4 🟡→✅）；否则诚实收回单调叙事。
 - **后续（拔高）**：再加 1–2 个插值臂（groundtruth↔winner 按 α 混的 target）训练，补成平滑曲线。
+- **⚠️ 第一次跑（2026-06-29）= 无效 + 暴露深层隐患**：
+  - **踩 pool 坑**：用了 E1 的 settings-matched `percand_lfm.csv`，但 X4 的 sft/sft_losers/sft_random 训练用的是 **grid 池**（`winners_only`←`pairs_best_worst`←`rewards.jsonl`）→ target L_FM 算错池。**已修 `run_dose.sh` 用 grid rewards 重算**，待重跑。
+  - **深层隐患**：四类 target L_FM **几乎一样（0.776–0.784）且真录音最高**——违背"真录音=低 L_FM=on-manifold"。即 **L_FM 可能根本不区分 target off-manifold 度**，崩坏真正跟 **reward 极值**（winners/losers 都崩、random/real 不崩），L_FM 解释不了。与 E1（候选级耦合缺失）一致 → **L_FM 不是崩坏故事主线**。
+  - **若 grid 重跑仍 flat**：诚实**降级 claim 4/9 的"off-manifold via L_FM"机制**，改述为"崩坏由 reward-extreme self-generated target 驱动、但 flow-likelihood 不解释"，并跑 ② 找真正的解释变量（reward 极值 / 生成设置）。
 
 ---
 
