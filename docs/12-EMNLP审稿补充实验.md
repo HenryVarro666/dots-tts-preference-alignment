@@ -179,3 +179,17 @@
 **裁决（workflow synthesizer）**：硬数字（三张表、dose-response、E2/E3、null-control、VoxCPM2 dependent-evidence scoping）与 canonical **全部自洽**；阻塞项是「正文已改对、headline/caption 没跟上」的机械漂移，无需新实验。修完 + 一次真实 EMNLP 编译确认 ≤8 页 → Findings 有竞争力。
 - ⚠️ **长度**：workflow 估「AT RISK」（abstract ~330 词、§6 偏长、若干 caveat 重复 6–7 次）；本机无法编译，已删最明显冗余（§3 重复括号），其余待 Overleaf 真实编译核页数，若超则按 synthesizer 点名的冗余处（conclusion 的 per-component 三元组、decode-path 重述）收。
 
+## 收页 · 8 页超限修复（2026-06-29）
+
+Overleaf 编译实测 12 页（含 refs）：**正文 §6 尾 + 整个 Conclusion 溢到第 9 页**（Conclusion 结束在 p9 右栏上 1/3，Limitations 才在其后开始）→ 正文超约 **0.67 页**。EMNLP：Limitations/Ethics/References **不计页**，故只能从正文（§1–Conclusion）砍。
+
+砍的全是 workflow 早标的真冗余（零信息丢失，约 15 处、≈0.5–0.55 页）：
+- **Conclusion 两长段合并成一段**（删掉对正文逐字复述的 per-component 三元组、Pearson 句、各系数重述）——最大单笔。
+- **Related Work 的 "Delta." 段**复述 contributions(1)–(5) → 压成一句。
+- **§5 开头**把 §4 的 Metrics/Statistics/CI 又抄一遍 → 删，指回 §4。
+- **§6.186 机理段尾**重复 §5+Table 2 的 decode-path 流式数字 → 删数字留结论。
+- **§6.184 末尾 VoxCPM2 caveat**、**§6.178 UTMOS 16k band 括注**、**§5.134 collapse-control 细节** → 各自压缩，完整版留在免费的 Limitations。
+- §3.71 结果预告、§4.79 RQ 枚举、§4.87 gate、§5.138 chunk-boundary 悬空数字、§5.140 套话 → 各微调。
+
+整篇 braces/$ 平衡、零禁用语、4 个 `\ref` 均有 `\label`。**本机装不了 LaTeX，页数须 Overleaf 真实编译核**；若仍超 ~0.1 页，备选再砍：intro 的 VoxCPM2 去重、§6.182 null-control 收紧、§2 收一句。
+
