@@ -99,7 +99,29 @@
 - **判据**：按 target `L_FM` 升序，崩坏 WER 单调上升 + Spearman>0 ⇒ 剂量-反应成立 → §5.1 把"monotone in off-manifold-ness"从 4 类别点升为量化曲线（claim 4 🟡→✅）；否则诚实收回单调叙事。
 - **后续（拔高）**：再加 1–2 个插值臂（groundtruth↔winner 按 α 混的 target）训练，补成平滑曲线。
 
-> **还没写的补充实验**（见上一轮分析）：★2 48kHz band-matched 重打分（便宜、复用现有音频）、★3 2×2 缺格臂（reward-weighted×reward-selected target，闭合 claim 5 识别）、★4 β/λ 扫、★5 VoxCPM2 自生成 pair。要写哪个再说。
+---
+
+## ★3 · claim 5 识别 —— ❌ 不用做新实验（现有 2×2 已闭合 + 揪出论文事实错误）
+
+- **核代码发现**：`reward_weighted` 的 `train_manifest = pairs/out/winners_only.jsonl` → **训练目标是 winner（off-manifold），不是真实录音**。论文原写"anchored to the **real** target"**是事实错误**（已修）。
+- 所以现有三臂已构成 **2×2 因子识别**（共享 `sft` 这个角）：
+  - `sft`(uniform, winner) 崩 0.556 vs `reward_weighted`(reward-weighted, **同** winner) 逃逸 0.092 → **目标函数是一条杆**。
+  - `sft`(uniform, winner) 崩 vs `sft_groundtruth`(uniform, **真录音**) 不崩 0.087 → **目标是第二条独立杆**。
+  - ⇒ **两条杆各自都能救**；崩坏需"似然/模仿型目标函数 + off-manifold 目标"**两者兼具**。`dpo_onmanifold`(似然-DPO+部分清洗) 仍崩 0.315 一致。
+- **2×2 第 4 格（reward-weighted×真目标）= 冗余、最没信息量 → 不训**。`.tex` §5.1/abstract/contrib 已改成"两杆识别"诚实版，**claim 5 🟡→✅、零新训练**。
+
+## ★2 · 第二指标交叉验证 —— ✅ 脚本就绪（band 担忧其实大部分已被现有流程控制）
+
+- **核代码发现**：`utmos_backend.py` `librosa.load(sr=16000)` → UTMOS **本就把音频重采样到 16kHz 再打分**，所有臂口径一致 → **48k vs 16k band-mismatch 不是混淆**（不会制造相对差异）。`.tex` band 措辞已改准（"均匀保守低估、非混淆"）。
+- 残留是"单一指标"风险 → ★2 改为**换第二个独立 MOS（DNSMOS）重打分臂音频**，看 open-SOAR 增益是否复现：
+  ```bash
+  pip install speechmos   # 第二指标后端（DNSMOS）
+  bash run_e2b.sh         # 默认 base_nfe10 open_soar_nfe10；纯重打分、无新合成
+  ```
+  - **判据**：open_soar 第二指标仍 > base ⇒ 自然度增益**跨指标稳健、非 UTMOS 伪影** → §5.1/Limitations 加一句；否则收回。
+- 脚本：`eval/rescore_metric.py` + `run_e2b.sh`（py_compile/bash -n 过）。
+
+> **仍未写**（拔 Main 才需）：★4 β/λ 扫（发散 vs 退化）、★5 VoxCPM2 自生成 pair（真 N=2）。
 
 ## E4 · VoxCPM2 原生配对（让跨架构复现真正独立）🟠 中
 
