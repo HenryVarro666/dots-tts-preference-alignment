@@ -203,3 +203,7 @@ Overleaf 编译实测 12 页（含 refs）：**正文 §6 尾 + 整个 Conclusio
 
 → 待 Overleaf 再编译确认 Conclusion 落回 p8。若仍差一线，备选：§6.182 null-control 收紧、§2 收一句、Table 2/3 也可同法紧排。
 
+### 收页 round 3（2026-06-29，最后一行级）
+
+Table 1 单栏 + intro 去重后再编译：**§6 整段回到 p8，Conclusion 也几乎全在 p8，只剩最后 2 行溢到 p9 顶**（~0.02 页）。最后一刀：Conclusion 内砍掉复述正文/§6 的 3 处（VoxCPM2 数字、honest-negative 括注 dpo_weronly/reward_weighted_weronly、结尾重复 headline 句、opening 微调）≈ 3 行 > 2 行溢出，留 ~1 行余量。零数字/论证改动，纯删正文里已有的重复。braces/$ 平衡。→ 再编一次应正文 ≤8 页（Conclusion 落 p8、Limitations 起 p9）。
+
