@@ -81,6 +81,25 @@
   3. **判据**：open\_soar 的 WER/UTMOS 均值若**清出** base 再合成带 ⇒ 升级为「真增益」（强化唯一正面结果）；否则维持当前「不退化」措辞（已诚实）。
   4. **落表**：§5.1 + Table 1 脚注加再合成 SD；据结果升级/维持 open\_soar 结论。
 - **预计**：5×2×100 句推理，小时级。
+- **✅ 已跑（2026-06-28，分轴结果、已落 §5.1）**：
+  - **base WER 0.136 ± 0.045**（带 [0.091, 0.181]）——论文里的 0.112 是一次走运抽样；UTMOS 4.242 ± 0.041。
+  - **open_soar UTMOS 4.398 ± 0.018 → 清出 base 带 [4.20, 4.28] = 真增益** ✅；**WER 0.091 ± 0.004 落在 base 带下沿 → 不主张 WER 增益**，但**稳定性碾压**（SD 0.004 vs 0.045）。
+  - **崩坏臂 0.556/0.890 远超 base 最差抽样 0.181 → 崩坏结论对再合成噪声稳健。**
+  - **裁决**：§5.1 已改为「UTMOS 真增益 + WER 不主张（但更稳）+ 崩坏稳健」。诚实分轴。
+
+---
+
+## ★1 · 剂量-反应（审稿 2.0 的因果桥，脚本已就绪）🔴 最高 ROI 的下一步
+
+- **审稿点（claim 4/9 缺因果桥）**：X4 是 4 个离散类别点；"越 off-manifold 的 target 越毒"还是相关、非因果。把 x 轴**量化**为各 target 类型音频的均值 `L_FM`，对崩坏(WER)做单调性 ⇒ 剂量-反应。
+- **✅ 脚本已就绪**（`probe_fm_reward.py` 加 `--score-audio`、`eval/dose_response.py`、`run_dose.sh`；py_compile/bash -n 过）。**大部分免费**：winners/losers/random 三点直接从 E1 的 `percand_lfm.csv` 抽；groundtruth(真录音) 一次 GPU 前向补第 4 点。一条命令：
+  ```bash
+  bash run_dose.sh 0
+  ```
+- **判据**：按 target `L_FM` 升序，崩坏 WER 单调上升 + Spearman>0 ⇒ 剂量-反应成立 → §5.1 把"monotone in off-manifold-ness"从 4 类别点升为量化曲线（claim 4 🟡→✅）；否则诚实收回单调叙事。
+- **后续（拔高）**：再加 1–2 个插值臂（groundtruth↔winner 按 α 混的 target）训练，补成平滑曲线。
+
+> **还没写的补充实验**（见上一轮分析）：★2 48kHz band-matched 重打分（便宜、复用现有音频）、★3 2×2 缺格臂（reward-weighted×reward-selected target，闭合 claim 5 识别）、★4 β/λ 扫、★5 VoxCPM2 自生成 pair。要写哪个再说。
 
 ## E4 · VoxCPM2 原生配对（让跨架构复现真正独立）🟠 中
 
