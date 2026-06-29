@@ -49,7 +49,7 @@
 - **协议**：
   1. **✅ 脚本已就绪**（`eval/analyze_collapse_blocks.py` + `run_e2.sh`；本机 py_compile / bash -n 已过；**纯 CPU、无需 GPU/新合成**）——一条命令：
      ```bash
-     bash run_e2.sh <eval-manifest.jsonl>            # 默认 arms = base_nfe10 sft_nfe10 dpo_multiobj_nfe10
+     bash run_e2.sh                                  # 默认 manifest=data/prompts/eval_big.jsonl, arms=base_nfe10 sft_nfe10 dpo_multiobj_nfe10
      ```
      读 `results/out/{arm}.metrics.jsonl`（`score_synth.py` 落盘的逐句 `{fid,wer,sim,utmos}`）+ manifest（全 100 fid）；**缺失的 fid = immediate-EOS 失败句**（无需单独记录）。
   2. 报告四件事（写回 §5.1 / Table 1）：
@@ -67,7 +67,11 @@
 - **审稿点**：CRITICAL #4。open\_soar WER 0.094 vs base 0.112，可能落在 base 的**再合成漂移带**（已知 0.103/0.128/0.112，generate() 无 seed）内；bootstrap CI 只覆盖句子抽样、**不覆盖再合成方差**。`.tex` 已先软化为「不退化」——**跑出方差带才能（可能）升回「真增益」**。
 - **可行性**：需 **K=5 次再合成** × {base, open\_soar} × 100 句（无新训练，仅推理）。
 - **协议**：
-  1. 对 base 与 open\_soar 各**独立再合成 K=5 次**（无 seed → 每次不同），每次算 WER/UTMOS。
+  1. **✅ 脚本已就绪**（`eval/resynth_variance.py` + `run_e3.sh`；本机 py_compile / bash -n 已过）——一条命令（需 GPU）：
+     ```bash
+     bash run_e3.sh 0                                  # GPU=0, manifest=data/prompts/eval_big.jsonl, reps=5, nfe=10, arms=base open_soar
+     ```
+     编排既有 `batch_synthesize.py` + `score_synth.py`：对 base 与 open\_soar 各**独立再合成 5 次**（generate() 无 seed → 每次不同），每次算 WER/UTMOS。
   2. 报告每臂 **跨 K 次的均值 ± SD**；构造 base 的再合成带（如 mean ± 2SD）。
   3. **判据**：open\_soar 的 WER/UTMOS 均值若**清出** base 再合成带 ⇒ 升级为「真增益」（强化唯一正面结果）；否则维持当前「不退化」措辞（已诚实）。
   4. **落表**：§5.1 + Table 1 脚注加再合成 SD；据结果升级/维持 open\_soar 结论。

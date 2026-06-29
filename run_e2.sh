@@ -8,7 +8,7 @@
 #   裁决:   report.txt 末尾 [E2 裁决]——worst-case n=100 仍崩 + 跨 block 均匀 ⇒ 非伪影。
 #   ⚠️ 本机只 bash -n / py_compile；运行只需 CPU + metrics.jsonl（无 GPU）。
 set -euo pipefail
-MANIFEST="${1:?用法: bash run_e2.sh <eval-manifest.jsonl> [arm tags...]}"; shift || true
+MANIFEST="${1:-data/prompts/eval_big.jsonl}"; shift || true
 ARMS=("$@"); [ "${#ARMS[@]}" -eq 0 ] && ARMS=(base_nfe10 sft_nfe10 dpo_multiobj_nfe10)
 TS="$(date +%Y%m%d_%H%M%S)"
 OUT="results/out/e2_collapse_blocks_${TS}"; mkdir -p "${OUT}"
