@@ -129,6 +129,7 @@
   ```
   - **判据**：open_soar 第二指标仍 > base ⇒ 自然度增益**跨指标稳健、非 UTMOS 伪影** → §5.1/Limitations 加一句；否则收回。
 - 脚本：`eval/rescore_metric.py` + `run_e2b.sh`（py_compile/bash -n 过）。
+- **✅ 已跑（2026-06-29）**：base DNSMOS 3.287 vs open_soar 3.345（Δ+0.058，同号 > base）→ open-SOAR 自然度增益**跨指标方向一致、非 UTMOS 伪影**（量级小、无 CI，仅方向确认；配 E3 的 UTMOS 清出再合成带 = 双重确认）。§5.1 已加一句。**★2 收尾。**
 
 > **仍未写**（拔 Main 才需）：★4 β/λ 扫（发散 vs 退化）、★5 VoxCPM2 自生成 pair（真 N=2）。
 
