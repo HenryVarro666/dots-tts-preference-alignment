@@ -236,3 +236,27 @@ Table 1 单栏 + intro 去重后再编译：**§6 整段回到 p8，Conclusion �
 
 > **✅ seam 已核验（2026-06-29, GPU 机器 /data/VoxCPM）**：`generate(text, prompt_wav_path, prompt_text, inference_timesteps, cfg_value)` → 1D float32 ndarray；输出采样率 = `model.tts_model.sample_rate`（README/CLI 官方口径）；加载 `voxcpm.core.VoxCPM` + `load_denoiser=False/optimize=False`。`generate_candidates_voxcpm._voxcpm_synthesize` 已据此定死。**唯一运行前提**：`export VOXCPM_REPO=/data/VoxCPM`（对 run_x16 子进程可见）；VoxCPM 不走 pip、靠 `ensure_voxcpm_importable()` 挂 sys.path。环境须用项目 .venv（base anaconda 有 torch↔torchaudio ABI 不匹配）。
 
+### ★5 结果（2026-06-29，GPU 实跑，**诚实负面：原生不复现**）
+
+VoxCPM2 自采样 188 对（settings-matched：固定 steps=10/cfg=2.0、仅换 seed）→ 同套 reward → 原生偏好对 → 原生 FM margin。`results/out/x16_voxcpm_native_20260629_153551/`：
+
+- **头条 Spearman ρ=+0.105（n.s.，95%CI[−0.053,+0.257]，perm-p=0.155）**；Pearson +0.051（n.s.）。
+- 高-gap 子集也不存活：top-50% ρ=+0.163(n.s.)、top-25% ρ=−0.019(n.s.)。
+- per-component：SIM_gap −0.586（但 trim-top-5% → +0.044，杠杆驱动）、WER_gap +0.109(n.s.)、UTMOS_gap −0.242(n.s.)。
+
+**裁决（关键）**：dots 的 −0.216 落在本次 CI **之外** → 不是单纯欠功率，而是**真·非复现**。即 **VoxCPM2 自己的 reward-winner 对 VoxCPM2 自己的似然并不系统性 off-manifold**。对照：VoxCPM2 打分 **dots 的对**时是 −0.266（显著）。
+
+⇒ 反相关是 **dots 候选生成分布**的性质（dots 的 reward-winner 是 off-manifold 的、且被第二个模型独立确认为 atypical），**不是连续-latent 的普适律**。
+
+**对论文的影响（建议，待定）**：
+- 头条（dots ρ=−0.216）+ 机理 + 2×2 建设性 **全部不动**。
+- §6 的 VoxCPM2-on-dots-pairs（−0.266）保留为「第二个 scorer 确认 dots winner 确实 off-manifold」= dependent 证据（已是现框架）。
+- **不升级**为 independent N=2（本来就没声称）；**新增**原生-null 作为 scope 边界：把「scope 是 continuous-latent TTS（两模型）」收窄为「在 dots.tts 上证实；可泛化的是**诊断方法**（先测 sign 再 DPO），而非该具体反相关」。
+- 这其实**增强可信度**（测了自己 claim 的强版本、诚实报负面），但需改 §6/Limitations/Conclusion 的 scope 措辞——动 positioning，先与作者确认再落刀。
+
+### ★4 状态（2026-06-29，首跑失败 → 已修 base）
+
+- **失败根因**：`run_x15` 原默认 LoRA base（`dpo_lora.yaml`）。LoRA DPO 的 ref 前向走 `self.policy.disable_adapter()`，本机 peft 版本在该上下文调 `get_model_status()` → `No adapter layers found` 抛错。**第一轮 dpo_multiobj 用全参、从未走 LoRA 路 → bug 潜伏至今**。全参路径用独立冻结 `self.ref`、不碰 disable_adapter，验证过能跑。
+- **已修**：`run_x15.sh` 默认 base 改 `configs/dpo_multiobj_fullparam.yaml`；LoRA 路留作 future-fix。全参单格较贵 → 建议「十字」5 格（BETAS 三档@λ=0.1 + LAMBDAS 三档@β=0.1）。
+- **重跑命令**：`bash run_x15.sh 0`（默认即全参），或缩格 `BETAS="0.1 0.5 2.0" LAMBDAS="0.1" bash run_x15.sh 0`。
+
