@@ -207,3 +207,4 @@ Overleaf 编译实测 12 页（含 refs）：**正文 §6 尾 + 整个 Conclusio
 
 Table 1 单栏 + intro 去重后再编译：**§6 整段回到 p8，Conclusion 也几乎全在 p8，只剩最后 2 行溢到 p9 顶**（~0.02 页）。最后一刀：Conclusion 内砍掉复述正文/§6 的 3 处（VoxCPM2 数字、honest-negative 括注 dpo_weronly/reward_weighted_weronly、结尾重复 headline 句、opening 微调）≈ 3 行 > 2 行溢出，留 ~1 行余量。零数字/论证改动，纯删正文里已有的重复。braces/$ 平衡。→ 再编一次应正文 ≤8 页（Conclusion 落 p8、Limitations 起 p9）。
 
+> **✅ 已核验（2026-06-29）**：Overleaf 编译确认正文 §1–Conclusion 完整落在 **8 页内**（Conclusion 结束在 p8 右栏底，Limitations 起于 p9 顶）。EMNLP 8 页硬限制达标，收页收口。
