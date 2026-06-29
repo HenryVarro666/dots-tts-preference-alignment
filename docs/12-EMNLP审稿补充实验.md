@@ -102,6 +102,11 @@
   - **踩 pool 坑**：用了 E1 的 settings-matched `percand_lfm.csv`，但 X4 的 sft/sft_losers/sft_random 训练用的是 **grid 池**（`winners_only`←`pairs_best_worst`←`rewards.jsonl`）→ target L_FM 算错池。**已修 `run_dose.sh` 用 grid rewards 重算**，待重跑。
   - **深层隐患**：四类 target L_FM **几乎一样（0.776–0.784）且真录音最高**——违背"真录音=低 L_FM=on-manifold"。即 **L_FM 可能根本不区分 target off-manifold 度**，崩坏真正跟 **reward 极值**（winners/losers 都崩、random/real 不崩），L_FM 解释不了。与 E1（候选级耦合缺失）一致 → **L_FM 不是崩坏故事主线**。
   - **若 grid 重跑仍 flat**：诚实**降级 claim 4/9 的"off-manifold via L_FM"机制**，改述为"崩坏由 reward-extreme self-generated target 驱动、但 flow-likelihood 不解释"，并跑 ② 找真正的解释变量（reward 极值 / 生成设置）。
+- **✅ v2 全量重跑（2026-06-29，188 prompt / grid 池 / 双轴）= 结论清晰、已落 §5.1+contrib+Table1**：
+  - **轴 A（绝对 L_FM）= inconclusive**：四类 0.777–0.785 全在噪声内（类间差 ~0.01 < 1 个 MC 标准误）→ 绝对 L_FM 测不动 target 类型（E1 那个反相关靠的是**配对去噪**，绝对均值没法抵消噪声）。**这是"量太吵"，不是"机制错"**。
+  - **轴 B（target reward 极值 |reward|）= ✅ 完美单调（Spearman +1.000）**：random(|r|=0.460,WER 0.138) < winners(0.619,0.556) < losers(0.899,0.569)；real 非极值→不崩 0.087。
+  - **裁决**：崩坏**随 target 的 reward 极值单调加剧** = 可量化剂量-反应 → **claim 4 🟡→✅**。机制统一到 **reward-extreme self-generated target**（与 E1 的 extreme-contrast 同主线"极值"），**不靠绝对 L_FM**。
+  - **已回填**：§5.1 X4 句、contrib 3、Table 1 caption 全改成"monotone in **reward-extremity**"（量化 + L_FM-too-noisy 注）。**E1+dose-response 这条"极值"线闭环。**
 
 ---
 
