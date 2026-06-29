@@ -36,7 +36,8 @@ def _load_metric(name: str):
         try:
             from speechmos import dnsmos  # type: ignore
         except Exception as e:  # noqa: BLE001
-            raise SystemExit(f"未装 speechmos（DNSMOS）：pip install speechmos —— {e}")
+            hint = "pip install onnxruntime" if "onnxruntime" in str(e) else "pip install speechmos onnxruntime"
+            raise SystemExit(f"DNSMOS 后端加载失败（{e}）→ {hint}")
 
         def score(path: str) -> float:
             try:
