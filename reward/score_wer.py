@@ -65,19 +65,28 @@ class _ASR:
             model=self._whisper_model,
             device=0 if use_cuda else -1,
             dtype=torch.float16 if use_cuda else torch.float32,  # 新 API（torch_dtype 已弃用）
-            # 不设 chunk_length_s：TTS 样本 <30s，Whisper 原生窗口即可，避免实验性分块警告
+            chunk_length_s=30,  # 鲁棒：崩坏臂会吐 >30s 跑飞音频，分块使批内 mel 长度一致，避免 pipeline padding 崩
         )
 
     def transcribe_en_batch(self, audios: list[str], batch_size: int = 8) -> list[str]:
         """批量转写英文：一次喂一批给 pipeline（GPU 利用率远高于逐条）。"""
         self._ensure_whisper()
-        outs = self._whisper(
-            list(audios), batch_size=batch_size,
-            generate_kwargs={"language": "en", "task": "transcribe"},
-        )
-        if isinstance(outs, dict):  # 传单条时 pipeline 返回 dict
-            outs = [outs]
-        return [o["text"] if isinstance(o, dict) else str(o) for o in outs]
+
+        def _run(items, bs):
+            outs = self._whisper(
+                list(items), batch_size=bs,
+                generate_kwargs={"language": "en", "task": "transcribe"},
+            )
+            if isinstance(outs, dict):  # 传单条时 pipeline 返回 dict
+                outs = [outs]
+            return [o["text"] if isinstance(o, dict) else str(o) for o in outs]
+
+        try:
+            return _run(audios, batch_size)
+        except RuntimeError:
+            # 防御：极端跑飞音频仍可能撑爆批内 padding → 退化逐条（慢但稳），
+            # 保证崩坏臂也能产出 WER（必然极高），而非整次评测崩掉。
+            return [_run([a], 1)[0] for a in audios]
 
     def transcribe_zh(self, audio: str) -> str:
         if self._paraformer is None:
