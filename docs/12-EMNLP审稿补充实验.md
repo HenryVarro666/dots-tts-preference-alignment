@@ -283,3 +283,25 @@ VoxCPM2 自采样 188 对（settings-matched：固定 steps=10/cfg=2.0、仅换 
 
 **下一步（便宜、无需重训）**：修了 score_wer 后，对 5 个 FAIL 格重打分 + 重聚合 → 网格出真实 WER（跑飞臂必然 ≫1）。命令见对话。
 
+### ★4 完整网格 + .tex 整合（2026-06-30，重打分后）
+
+修了 score_wer 后重打分 5 个 FAIL 格 → 真实 WER（跑飞臂 8–20 = 800–2000%、UTMOS 贴地板 1.28–1.38、SIM≈0）。完整 WER 网格：
+```
+β\λ_sft   0.0     0.1     1.0
+0.1       8.04    0.121   0.085
+0.5      13.02   20.57    0.124
+2.0      19.17   13.95    0.149
+```
+λ=1.0 全救回 ≈base，λ≤0.1 几乎全崩，**严重度随 λ_sft 单调**；dpo_multiobj(λ=0.2, WER0.890) 正落 (0.5,0.1)=20.57 与 (0.5,1.0)=0.124 之间。
+
+**✅ 已落 .tex**（4 处）：
+- §5：加一句「anchor-SFT 强度是第三杠杆、崩坏 graded in λ_sft、强 anchor 救」+ 指 Appendix。
+- Limitations：把 graded-vs-divergence 的 **open question 标记为已解决**（β×λ 单调 → graded EOS-pathway destabilization、anchor 可控，非失控发散）；**收回** "harms regardless of objective" → anchor-conditional。
+- **新增 Appendix A**（不计页）：β×λ 网格表 `tab:sweep` + 机理段。
+- §6：删一处重复的 reward-hacking 数字抵消正文增量。
+- braces/$ 平衡、6 个 `\ref` 均有 `\label`。
+
+**净效果**：★4 不再是「漂亮正面」，而是**解决了论文一个 open caveat（graded vs divergence → graded）+ 把崩坏精确定位到 EOS 通路 + 加了 anchor 这第三杠杆**；代价是软化 "regardless of hyperparameters"（已诚实收回）。
+
+> 待 Overleaf 重编确认 ★5+★4 合起来仍 ≤8 页（正文净增约 1 行；appendix/Limitations 免计）。FAIL 格已重打分入 results/out/，建议再跑一次 `beta_lambda_sweep --mode aggregate` 刷新归档报告。
+
