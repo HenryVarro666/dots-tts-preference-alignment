@@ -260,3 +260,26 @@ VoxCPM2 自采样 188 对（settings-matched：固定 steps=10/cfg=2.0、仅换 
 - **已修**：`run_x15.sh` 默认 base 改 `configs/dpo_multiobj_fullparam.yaml`；LoRA 路留作 future-fix。全参单格较贵 → 建议「十字」5 格（BETAS 三档@λ=0.1 + LAMBDAS 三档@β=0.1）。
 - **重跑命令**：`bash run_x15.sh 0`（默认即全参），或缩格 `BETAS="0.1 0.5 2.0" LAMBDAS="0.1" bash run_x15.sh 0`。
 > **✅ ★5 已落 .tex（2026-06-29）**：generality 从「continuous-latent TTS（两模型）」收窄为「dots.tts + 可泛化的诊断方法（DPO 前测 sign）」；VoxCPM2-on-dots(−0.266) 保留为「第二模型确认 dots winner off-manifold」的 dependent 证据；Limitations 加原生-null 全文（ρ=+0.105 n.s.，dots −0.216 在其 CI 外）。改了 intro§37 / results§143 / §6 cross-arch / conclusion / Limitations 五处；并精简 §6 的 VoxCPM2 描述 + n=24 pilot 段抵消正文增量。over-scope 措辞（'not dots.tts-specific' / 'scope is continuous-latent TTS'）已清零、braces/$ 平衡。**待 Overleaf 重编确认仍 ≤8 页**（正文净增 ~1 行，若 Conclusion 又溢一两行，备选再压 §6.180 或 §6.186）。
+
+### ★4 结果定性完成（2026-06-30，全参 3×3 实跑 + FAIL 溯源）
+
+`results/out/x15_betalambda_20260629_170718/`。**先消红旗**：原始 dpo_multiobj（论文 0.890 臂）配置是 **β=0.5, λ_sft=0.2**（见 `dpo_multiobj_fullparam.yaml`），**不在网格点**（网格 λ∈{0,0.1,1.0}）。网格把它夹在 (0.5,0.1)=FAIL 与 (0.5,1.0)=好 之间 → **0.890 完全自洽，非偶然/不可复现**。
+
+**WER 网格**（base 0.112）：
+```
+β\λ_sft   0.0     0.1     1.0
+0.1      FAIL    0.121   0.085
+0.5      FAIL    FAIL    0.124
+2.0      FAIL    FAIL    0.149
+```
+**FAIL 溯源（GPU 实查 dpo_b0p1_l0p0）**：wav 时长 **71–78 秒**（参考句几秒）、振幅 0.17–0.22 → 模型**永不停、无限复读 = EOS/stopping 通路彻底崩**（论文 decode-path 特异的极端版）。score_synth 崩是因 Whisper 批 padding 撑不住 70s 跑飞音频（mel 7824 vs 7120）——**打分崩是崩坏的症状、非误判**。已修 `score_wer.py`（`chunk_length_s=30` + 逐条退化兜底；正常 <30s 音频零影响，不动已有 Table1 数字）。
+
+**真实发现（须诚实落论文，软化「regardless of hyperparams」）**：
+- 崩坏由 **anchor-SFT 强度 λ_sft 主控**：λ=0（无 anchor）全 β 崩；λ=1.0（强 anchor）全 β 救回 ≈base（WER 0.085–0.149、UTMOS 4.17–4.29）；边界随 β 移（β 越大越需更强 anchor）。
+- **机理一致且强化**：anchor SFT = CE+EOS-on-winners，专稳 backbone 的 EOS/text 通路；弱 anchor → DPO 往 off-manifold winner 推 → EOS 通路崩（跑飞或 immediate-EOS）；强 anchor → 守住。**= EOS-pathway 崩坏 + anchor 强度作第三稳定杠杆**（与 2×2 的 objective/target 两杠杆并列）。
+- ⚠️ 注意两种崩坏模式：原始 dpo_multiobj(0.5,0.2) = immediate-EOS 25% + 高 WER 0.890；★4 的 λ=0 格 = 永不停跑飞。**同为 EOS 通路失败、方向相反**（一个秒停、一个不停）。
+
+**落论文（待重打分后）**：§5.1/附录加 β×λ 网格——「崩坏受 anchor 强度调控（λ=0 崩、λ=1 救）、定位到 EOS 通路、anchor 是第三稳定杠杆」；**收回**「regardless of hyperparameters」；并注「原始 dpo_multiobj 在 (β=0.5,λ=0.2) 崩坏区」。
+
+**下一步（便宜、无需重训）**：修了 score_wer 后，对 5 个 FAIL 格重打分 + 重聚合 → 网格出真实 WER（跑飞臂必然 ≫1）。命令见对话。
+
