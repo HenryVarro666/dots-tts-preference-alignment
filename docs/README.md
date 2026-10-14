@@ -18,7 +18,7 @@ Supporting documentation for **[*When Likelihood Disagrees with Quality*](../PAP
 | Doc | What it is |
 |---|---|
 | [`11-未来工作与展望.md`](11-未来工作与展望.md) | **Future work & roadmap** — the consolidated single source-of-truth: completed experiments (X4–X14, with results), open resubmit experiments, limitations, future prospects, deferred (budget/scope) items, and a 〔待核实〕 interface tracker. Pulls together what was scattered across §7/§8, the plan, and the ADRs. |
-| [`12-EMNLP审稿补充实验.md`](12-EMNLP审稿补充实验.md) | **EMNLP review-driven supplementary experiments** — runnable protocols for the experiments the peer-review panel flagged as gating a credible Findings resubmit (E1 selection-artifact null control, E2 per-block/worst-case EOS, E3 re-synthesis variance) + E4/E5 for Main. Each with reviewer-concern mapping, feasibility, steps, success criterion, and where it lands in the paper. |
+| [`12-审稿补充实验.md`](12-审稿补充实验.md) | **Review-driven supplementary experiments** — runnable protocols for the experiments the peer-review panel flagged as gating a credible Findings resubmit (E1 selection-artifact null control, E2 per-block/worst-case EOS, E3 re-synthesis variance) + E4/E5 for Main. Each with reviewer-concern mapping, feasibility, steps, success criterion, and where it lands in the paper. |
 
 ## Method & reproduction
 | Doc | What it is |

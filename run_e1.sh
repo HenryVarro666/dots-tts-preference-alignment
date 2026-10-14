@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# run_e1.sh — E1 选择伪影 / order-statistic null control（回应 EMNLP 审稿 Devil's Advocate 最强反驳）一条命令。
+# run_e1.sh — E1 选择伪影 / order-statistic null control（回应 模拟审稿 Devil's Advocate 最强反驳）一条命令。
 #   做什么: 对现有 settings-matched 候选池的**每个候选**算 K-MC 去噪 L_FM（no_grad、无需新合成）→
 #           做 selection-null 分析（candidate-level 耦合 + Null A 随机准则 + Null B interior pairs）→ 归档。
 #   用法:   bash run_e1.sh [GPU] [REWARDS] [N] [K]

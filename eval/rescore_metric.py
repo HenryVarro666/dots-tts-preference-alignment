@@ -1,7 +1,7 @@
 """
 rescore_metric.py — ★2：第二个独立自然度指标交叉验证（排除「open-SOAR 增益 / UTMOS 反相关是 UTMOS 单指标伪影」）
 
-背景（EMNLP 审稿 claim 9 的替代解释）:
+背景（模拟审稿 claim 9 的替代解释）:
     UTMOS 把音频重采样到 16kHz 再打分（utmos_backend.py 已 librosa.load(sr=16000)），所有臂口径一致 → 48k vs 16k
     band-mismatch **不是混淆**（不会制造相对差异）；残留限制只是 UTMOS 看不到 16–24kHz、对 48k 自然度均匀低估。
     但 UTMOS 仍是**单一指标**。换一个**独立**的 MOS 预测器（默认 DNSMOS）重打分臂音频，看 open-SOAR 的自然度
