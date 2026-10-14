@@ -1,7 +1,7 @@
 """
 dose_response.py — ★1 剂量-反应：训练目标的 off-manifold 度 → 崩坏（把「诊断 ↔ 崩坏」从相关升为因果桥）
 
-背景（EMNLP 审稿 claim 4/9 缺因果桥）:
+背景（模拟审稿 claim 4/9 缺因果桥）:
     X4 SFT-target 梯度有 4 臂（groundtruth/random/losers/winners），崩坏随 target 越 off-manifold 越重——但那是
     4 个离散「类别」点、off-manifold 度未量化。本脚本把 x 轴量化为「各 target 类型音频的均值 L_FM」，对崩坏
     （eval WER）做单调性/剂量-反应检验 → 若 target L_FM↑ ⇒ 崩坏↑，即「越 off-manifold 的目标越毒」的因果证据。

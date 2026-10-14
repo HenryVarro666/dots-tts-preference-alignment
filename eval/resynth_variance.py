@@ -1,7 +1,7 @@
 """
 resynth_variance.py — E3：再合成方差（确认 open-SOAR 唯一正面结果是否清出 base 的再合成噪声带）
 
-背景（EMNLP 审稿 CRITICAL #4）:
+背景（模拟审稿 CRITICAL #4）:
     dots.tts 的 generate() 无 seed → 每次再合成的绝对指标都会漂（base WER 见过 0.103/0.128/0.112）。
     bootstrap CI 只覆盖「句子抽样」、不覆盖「再合成」方差。open_soar 的 WER 0.094 vs base 0.112 可能就落在
     base 的再合成漂移带内 → `.tex` 已先软化为「不退化」；**跑出方差带才能（可能）升回「真增益」**。

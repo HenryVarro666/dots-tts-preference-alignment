@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # run_e2.sh — E2 崩坏臂分块 + 最坏情况 EOS 计分（CPU 纯分析、无需 GPU / 新合成）。
-#   回应 EMNLP 审稿：dpo_multiobj 崩坏是否 LJ002 块集中 + 丢 25 条 EOS 失败的伪影；n=75 vs n=100 不可比。
+#   回应 模拟审稿：dpo_multiobj 崩坏是否 LJ002 块集中 + 丢 25 条 EOS 失败的伪影；n=75 vs n=100 不可比。
 #   用法:   bash run_e2.sh <eval-manifest.jsonl> [arm tags...]
 #           默认 arms = base_nfe10 sft_nfe10 dpo_multiobj_nfe10
 #   前置:   results/out/{arm}.metrics.jsonl（eval/score_synth.py 产出的逐句 wer/sim/utmos）+ 评测 manifest（全 100 fid）。

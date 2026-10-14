@@ -1,5 +1,5 @@
 """
-analyze_collapse_blocks.py — E2：崩坏臂的分块 + 最坏情况 EOS 计分（回应 EMNLP 审稿 collapse 混淆 / n=75 vs n=100）
+analyze_collapse_blocks.py — E2：崩坏臂的分块 + 最坏情况 EOS 计分（回应 模拟审稿 collapse 混淆 / n=75 vs n=100）
 
 背景（审稿点）:
     EIC + methodology + Devil's Advocate 指出 dpo_multiobj 的「崩坏」可能是 (i) LJ002 块集中、(ii) 丢弃了
