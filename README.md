@@ -1,13 +1,18 @@
+<div align="center">
+
 # When Likelihood Disagrees with Quality
 
-### A cautionary diagnosis of Direct Preference Optimization for continuous-latent flow-matching TTS
+**A cautionary diagnosis of Direct Preference Optimization for continuous-latent flow-matching TTS.**
 
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/overview-dark.svg">
-    <img src="docs/overview-light.svg" alt="Overview: held-out WER for base, open-SOAR, SFT on reward winners and DPO-FM; reward and likelihood correlate at rho = -0.22" width="560">
-  </picture>
-</p>
+![Python](https://img.shields.io/badge/Python-3.10+-3776AB?logo=python&logoColor=white)
+![models](https://img.shields.io/badge/models-dots.tts%20·%20VoxCPM2-6F42C1)
+![code license](https://img.shields.io/badge/code%20license-Apache--2.0-3DA639)
+[![homepage](https://img.shields.io/badge/homepage-ccao2679.com-555555)](https://www.ccao2679.com/research/#dots-tts-preference-alignment)
+
+<img src="docs/figures/overview.png" alt="Overview poster: reward and likelihood are anti-correlated (rho = -0.22); only open-SOAR improves on the held-out set" width="100%">
+
+</div>
+
 
 > **Research question.** Can you align a modern continuous-latent text-to-speech model the obvious way — generate candidates, score them with automatic metrics, and run DPO toward the winners?
 >
