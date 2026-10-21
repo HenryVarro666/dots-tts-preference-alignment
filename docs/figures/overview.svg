@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="960" viewBox="0 0 1600 960" role="img" aria-labelledby="title desc"><title id="title">DOTS-TTS-PREFERENCE-ALIGNMENT</title><desc id="desc">When likelihood disagrees with quality. Why DPO fails on a continuous-latent, flow-matching TTS model.</desc><defs><linearGradient id="paper" x2="1" y2="1"><stop stop-color="#F7F9FC"/><stop offset="1" stop-color="#EFF3F7"/></linearGradient></defs><rect width="1600" height="960" fill="url(#paper)"/><g font-family="Inter, 'Segoe UI', Arial, sans-serif">
+<rect x="0" y="0" width="1600" height="9" rx="0" fill="#3157A4" stroke="none"/>
+<text x="64" y="66" font-size="20" fill="#172837" font-weight="700" letter-spacing="2" data-maxx="900">DOTS-TTS-PREFERENCE-ALIGNMENT</text>
+<text x="1536" y="66" font-size="16" fill="#3157A4" font-weight="600" letter-spacing="1" text-anchor="end">TTS ALIGNMENT / DIAGNOSIS</text>
+<text x="60" y="167" font-size="72" fill="#142638" font-weight="500" data-maxx="1540">When likelihood disagrees with quality.</text>
+<text x="64" y="221" font-size="27" fill="#344C5F" font-weight="400" data-maxx="1536">Why DPO fails on a continuous-latent, flow-matching TTS model.</text>
+<text x="64" y="262" font-size="20" fill="#697988" font-weight="400" data-maxx="1536">A falsifiable negative result, a training-free probe and a cross-architecture replication.</text>
+<rect x="64" y="323" width="344" height="272" rx="20" fill="#FFFFFF" stroke="#DCE4EB"/>
+<rect x="88" y="349" width="44" height="5" rx="2" fill="#3157A4" stroke="none"/>
+<text x="88" y="393" font-size="17" fill="#3157A4" font-weight="700" letter-spacing="1.4" data-maxx="394">01 / GENERATE</text>
+<text x="88" y="441" font-size="28" fill="#172C3C" font-weight="600" data-maxx="394">Candidates</text>
+<text x="88" y="485" font-size="18" fill="#5C6D7B" font-weight="400" data-maxx="394">dots.tts over a sampling grid</text>
+<text x="88" y="517" font-size="18" fill="#5C6D7B" font-weight="400" data-maxx="394">LJSpeech prompts</text>
+<text x="88" y="549" font-size="18" fill="#5C6D7B" font-weight="400" data-maxx="394">On-manifold filtering</text>
+<path d="M416 458h16m-6-6 6 6-6 6" fill="none" stroke="#3157A4" stroke-width="2"/>
+<rect x="440" y="323" width="344" height="272" rx="20" fill="#FFFFFF" stroke="#DCE4EB"/>
+<rect x="464" y="349" width="44" height="5" rx="2" fill="#3157A4" stroke="none"/>
+<text x="464" y="393" font-size="17" fill="#3157A4" font-weight="700" letter-spacing="1.4" data-maxx="770">02 / SCORE</text>
+<text x="464" y="441" font-size="28" fill="#172C3C" font-weight="600" data-maxx="770">Automatic reward</text>
+<text x="464" y="485" font-size="18" fill="#5C6D7B" font-weight="400" data-maxx="770">WER (Whisper large-v3)</text>
+<text x="464" y="517" font-size="18" fill="#5C6D7B" font-weight="400" data-maxx="770">Speaker similarity (ECAPA)</text>
+<text x="464" y="549" font-size="18" fill="#5C6D7B" font-weight="400" data-maxx="770">UTMOS naturalness</text>
+<path d="M792 458h16m-6-6 6 6-6 6" fill="none" stroke="#3157A4" stroke-width="2"/>
+<rect x="816" y="323" width="344" height="272" rx="20" fill="#FFFFFF" stroke="#DCE4EB"/>
+<rect x="840" y="349" width="44" height="5" rx="2" fill="#3157A4" stroke="none"/>
+<text x="840" y="393" font-size="17" fill="#3157A4" font-weight="700" letter-spacing="1.4" data-maxx="1146">03 / ALIGN</text>
+<text x="840" y="441" font-size="28" fill="#172C3C" font-weight="600" data-maxx="1146">Four objectives</text>
+<text x="840" y="485" font-size="18" fill="#5C6D7B" font-weight="400" data-maxx="1146">DPO-FM (flow-matching loss)</text>
+<text x="840" y="517" font-size="18" fill="#5C6D7B" font-weight="400" data-maxx="1146">SFT on reward winners</text>
+<text x="840" y="549" font-size="18" fill="#5C6D7B" font-weight="400" data-maxx="1146">open-SOAR, reward-weighted</text>
+<path d="M1168 458h16m-6-6 6 6-6 6" fill="none" stroke="#3157A4" stroke-width="2"/>
+<rect x="1192" y="323" width="344" height="272" rx="20" fill="#FFFFFF" stroke="#DCE4EB"/>
+<rect x="1216" y="349" width="44" height="5" rx="2" fill="#3157A4" stroke="none"/>
+<text x="1216" y="393" font-size="17" fill="#3157A4" font-weight="700" letter-spacing="1.4" data-maxx="1522">04 / PROBE</text>
+<text x="1216" y="441" font-size="28" fill="#172C3C" font-weight="600" data-maxx="1522">Reward vs likelihood</text>
+<text x="1216" y="485" font-size="18" fill="#5C6D7B" font-weight="400" data-maxx="1522">Denoised FM margin per pair</text>
+<text x="1216" y="517" font-size="18" fill="#5C6D7B" font-weight="400" data-maxx="1522">Settings-matched, N = 188</text>
+<text x="1216" y="549" font-size="18" fill="#5C6D7B" font-weight="400" data-maxx="1522">Replicated on VoxCPM2</text>
+<rect x="64" y="635" width="470" height="211" rx="18" fill="#E0E8F6" stroke="none"/>
+<text x="88" y="675" font-size="15" fill="#3157A4" font-weight="700" letter-spacing="1.2" data-maxx="516">CORE FINDING</text>
+<text x="88" y="722" font-size="24" fill="#193346" font-weight="600" data-maxx="516">ρ = −0.22, not positive</text>
+<text x="88" y="765" font-size="18" fill="#536777" font-weight="400" data-maxx="516">The reward picks the less-likely sample;</text>
+<text x="88" y="795" font-size="18" fill="#536777" font-weight="400" data-maxx="516">VoxCPM2 replicates it (ρ = −0.27).</text>
+<rect x="565" y="635" width="470" height="211" rx="18" fill="#E8EDF3" stroke="none"/>
+<text x="589" y="675" font-size="15" fill="#3157A4" font-weight="700" letter-spacing="1.2" data-maxx="1017">HELD-OUT, n = 100</text>
+<text x="589" y="722" font-size="24" fill="#193346" font-weight="600" data-maxx="1017">Only open-SOAR improves</text>
+<text x="589" y="765" font-size="18" fill="#536777" font-weight="400" data-maxx="1017">UTMOS 4.38 vs 4.28 base, WER 0.09 vs 0.11.</text>
+<text x="589" y="795" font-size="18" fill="#536777" font-weight="400" data-maxx="1017">DPO-FM collapses to WER 0.89.</text>
+<rect x="1066" y="635" width="470" height="211" rx="18" fill="#E8EDF3" stroke="none"/>
+<text x="1090" y="675" font-size="15" fill="#3157A4" font-weight="700" letter-spacing="1.2" data-maxx="1518">STREAMING CHECK</text>
+<text x="1090" y="722" font-size="24" fill="#193346" font-weight="600" data-maxx="1518">The collapse is offline-only</text>
+<text x="1090" y="765" font-size="18" fill="#536777" font-weight="400" data-maxx="1518">Collapsed arms stream normal speech.</text>
+<text x="1090" y="795" font-size="18" fill="#536777" font-weight="400" data-maxx="1518">First audio in ~162 ms for every arm.</text>
+<path d="M64 888h1472" stroke="#CED9E3"/>
+<text x="64" y="923" font-size="17" fill="#647788" font-weight="400" data-maxx="1536">INDEPENDENT RESEARCH  /  Bootstrap CIs and permutation tests; the full write-up is PAPER_DRAFT.md.</text>
+</g></svg>
