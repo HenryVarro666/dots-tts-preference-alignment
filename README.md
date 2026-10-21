@@ -2,6 +2,13 @@
 
 ### A cautionary diagnosis of Direct Preference Optimization for continuous-latent flow-matching TTS
 
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/overview-dark.svg">
+    <img src="docs/overview-light.svg" alt="Overview: held-out WER for base, open-SOAR, SFT on reward winners and DPO-FM; reward and likelihood correlate at rho = -0.22" width="560">
+  </picture>
+</p>
+
 > **Research question.** Can you align a modern continuous-latent text-to-speech model the obvious way — generate candidates, score them with automatic metrics, and run DPO toward the winners?
 >
 > **Answer (this project).** No — and *why* is the interesting part. The automatic-metric reward systematically prefers the candidate the model finds **less** likely, so the natural DPO adaptation optimizes in the wrong direction and the model degrades. I prove this with a held-out benchmark, a training-free mechanistic probe, and a cross-architecture replication, then show which alignment routes *do* work.
