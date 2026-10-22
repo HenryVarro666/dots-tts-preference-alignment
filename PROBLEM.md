@@ -1,13 +1,15 @@
-# 研究问题与验证
+# Research question and verification
 
-> **在相同数据与训练预算下，基于 FM surrogate 的偏好训练，能否在独立质量评价中超过 winner-only SFT，并在生成条件变化后保持收益？**
+> **With the same data and training budget, can preference training built on a flow-matching (FM) surrogate beat winner-only SFT in an independent quality evaluation, and keep its gains when generation conditions change?**
 
-**为什么值得解决：** 连续语音模型的后训练需要把偏好信号转化为可听见的生成改善。只有训练损失下降或自动评分提高，还不足以判断方法是否适合实际合成。
+**Why it matters:** Post-training a continuous-latent speech model has to turn preference signals into improvements you can hear. A falling training loss or a rising automatic score does not by itself show that the method suits real synthesis.
 
-**核心矛盾：** 自动指标、训练 surrogate 与真实生成质量可能不一致；不同提示和解码条件也可能改变观察到的退化。FM loss 不自动等于真实 likelihood，与奖励的相关性不能单独证明训练失败的因果机制。
+**Central tension:** Automatic metrics, the training surrogate and true generation quality can disagree, and different prompts and decoding settings can change the degradation observed. FM loss is not automatically the true likelihood, and its correlation with the reward cannot on its own prove the causal mechanism behind a training failure.
 
-**当前证据与缺口：** [README](README.md) 和 [实验文档](docs/) 描述了多臂训练、探针和离线／流式观察。现有结果应按原始条件解释；生成源、提示条件及 surrogate 的独立作用仍需要受控实验。
+**Current evidence and gap:** The [README](README.md) and the [experiment docs](docs/) describe the multi-arm training, the probes and the offline and streaming observations. Existing results should be read under their original conditions; the separate roles of the generation source, the prompt conditions and the surrogate still need controlled experiments.
 
-**决定性验证：** 固定数据、计算与评价规则，比较真实录音 SFT、winner-only SFT 和偏好训练；匹配可匹配的推理条件，使用独立评价、盲听与多种子。用第二模型自身生成的 pairs 验证适用范围。若收益在匹配条件后消失，或简单 SFT 已同样有效，应缩小机制与方法主张。
+**Decisive test:** Fix data, compute and evaluation rules, and compare SFT on real recordings, winner-only SFT and preference training. Match inference conditions wherever they can be matched, and use independent evaluation, blind listening and several seeds. Check the scope with pairs a second model generates itself. If the gains disappear once conditions are matched, or plain SFT works just as well, narrow the claims about the mechanism and the method.
 
-本模块定义待验证问题，不新增实验结果，也不改变已有论文与历史记录。
+This section defines questions to be tested; it adds no experimental results and does not change the existing paper or history.
+
+中文版：[PROBLEM.zh.md](PROBLEM.zh.md)
