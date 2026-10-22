@@ -2,6 +2,8 @@
 
 # When Likelihood Disagrees with Quality
 
+**English** · [简体中文](README.zh-CN.md)
+
 **A cautionary diagnosis of Direct Preference Optimization for continuous-latent flow-matching TTS.**
 
 ![Python](https://img.shields.io/badge/Python-3.10+-3776AB?logo=python&logoColor=white)
@@ -49,6 +51,50 @@ Continuous-latent TTS (flow-matching over continuous audio latents — **no disc
 - Held-out (n = 100): **only the likelihood-aligned, on-manifold route improves**; every arm trained toward reward-selected self-generated targets — DPO-FM *and* plain SFT-on-winners — **collapses**.
 - The collapse is **decode-path-specific**: the same checkpoints **stream perfectly normal speech** under production (1T1A) decoding — a generation-time artifact, not a broken model.
 - The diagnosis **replicates confound-free on a second, independently-built architecture** (VoxCPM2, diffusion-AR; settings-matched ρ = −0.266) → architecture-level evidence across **N = 2** continuous-latent implementations.
+
+---
+
+## Architecture
+
+```mermaid
+flowchart LR
+  subgraph GEN["Data and pair generation"]
+    P["prepare_prompts.py<br/>train prompts + recordings"]
+    C["generate_candidates.py<br/>dots.tts-base, K per prompt"]
+    R["reward/<br/>WER · SIM · UTMOS"]
+    PR["build_preference_pairs.py<br/>best-worst pairs"]
+  end
+  subgraph TRAIN["Training arms (alignment/)"]
+    DPO["train_dots_tts_dpo.py<br/>DPO-FM"]
+    SFT["train_sft.py<br/>SFT on one target"]
+    RW["train_reward_weighted.py<br/>reward-weighted regression"]
+    OS["train_open_soar.py<br/>clean vs noised audio"]
+  end
+  subgraph PROBE["Training-free probes"]
+    PB["probe_fm_reward.py<br/>dots.tts L_FM margin"]
+    PV["probe_fm_reward_voxcpm.py<br/>VoxCPM2 L_FM margin"]
+    PA["probe_analysis.py<br/>Spearman, permutation tests"]
+  end
+  subgraph EVAL["Held-out evaluation"]
+    E["build_eval_set.py<br/>n = 100"]
+    B["dots.tts-base<br/>base arm"]
+    INF["inference/<br/>offline + 1T1A streaming"]
+    SC["eval/score_synth.py<br/>streaming_metrics.py"]
+    AG["aggregate_results.py<br/>Tables 1–3"]
+  end
+  P --> C --> R --> PR
+  PR -- "preference pairs" --> DPO
+  PR -- "winners / losers / random" --> SFT
+  PR -- "winners + reward" --> RW
+  P -- "real recordings" --> SFT & OS
+  PR --> PB & PV
+  PB & PV --> PA
+  TRAIN -- "checkpoints" --> INF
+  E & B --> INF
+  INF --> SC --> AG
+```
+
+Read left to right: the candidate → reward → pair chain feeds both the training arms and the training-free probes, and every arm (plus the untrained base) is synthesized on the same held-out set and scored with the same WER/SIM/UTMOS backends the reward uses. All arms fine-tune dots.tts-base; `run_train_all.sh` dispatches training and `ablation/run_matrix.py` drives synthesis and scoring.
 
 ---
 
