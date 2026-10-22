@@ -211,7 +211,7 @@ python results/aggregate_results.py   # Tables 1–3
 
 ### 数据可得性
 
-代码、分析脚本以及全部结果**表格／数字**（见 [`docs/`](docs/) 和 [`PAPER_DRAFT.md`](PAPER_DRAFT.md)）都纳入了版本控制。体积大或能轻松重新生成的产物——模型 checkpoint、生成的音频、逐对 CSV、日志——**按设计被 git 忽略**，可以用上面的脚本复现；原始运行输出保存在 GPU 主机上。
+代码、分析脚本以及全部结果**表格／数字**（见 [`docs/`](docs/) 和 [`PAPER_DRAFT.md`](PAPER_DRAFT.md)）都纳入了版本控制。体积大或能轻松重新生成的产物——模型 checkpoint、生成的音频、大部分逐对 CSV、日志——**按设计被 git 忽略**，可以用上面的脚本复现；原始运行输出保存在 GPU 主机上。例外是四个探针文件 `alignment/out/probe_per_pair*.csv`、`results/out/` 中的运行汇总和 `ablation/ledger.jsonl`：报告中的数字由它们计算得出，因此纳入了版本控制。
 
 ---
 

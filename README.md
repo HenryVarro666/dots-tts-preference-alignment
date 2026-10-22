@@ -211,7 +211,7 @@ Requires an NVIDIA GPU for training/eval; the probes are forward-only.
 
 ### Data availability
 
-Code, analysis scripts, and all result **tables/numbers** (in [`docs/`](docs/) and [`PAPER_DRAFT.md`](PAPER_DRAFT.md)) are version-controlled. Large or trivially regenerable artifacts — model checkpoints, generated audio, per-pair CSVs, logs — are **git-ignored by design** and reproduced by the scripts above; the raw run outputs live on the GPU host.
+Code, analysis scripts, and all result **tables/numbers** (in [`docs/`](docs/) and [`PAPER_DRAFT.md`](PAPER_DRAFT.md)) are version-controlled. Large or trivially regenerable artifacts — model checkpoints, generated audio, most per-pair CSVs, logs — are **git-ignored by design** and reproduced by the scripts above; the raw run outputs live on the GPU host. The exceptions are the four probe files `alignment/out/probe_per_pair*.csv`, the run summaries in `results/out/` and `ablation/ledger.jsonl`, which are tracked because the reported numbers are computed from them.
 
 ---
 
